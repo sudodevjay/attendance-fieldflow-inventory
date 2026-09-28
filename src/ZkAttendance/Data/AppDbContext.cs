@@ -72,7 +72,6 @@ public class AppDbContext : DbContext
             ("Employees", "HomeAddress", "nvarchar(250) NULL"),
             ("Employees", "Email", "nvarchar(100) NULL"),
             ("Employees", "BirthDate", "datetime2 NULL"),
-            ("Employees", "Photo", "varbinary(max) NULL"),
             ("DeviceProfiles", "ProductName", "nvarchar(50) NULL"),
             ("DeviceProfiles", "SerialNumber", "nvarchar(50) NULL"),
             ("DeviceProfiles", "Firmware", "nvarchar(50) NULL"),
@@ -90,11 +89,19 @@ public class AppDbContext : DbContext
             ("LeaveEntries", "AppliedOn", "datetime2 NULL"),
             ("LeaveEntries", "ApprovedBy", "nvarchar(100) NULL"),
             ("LeaveEntries", "ApprovedOn", "datetime2 NULL"),
+            ("Employees", "PhotoBase64", "nvarchar(max) NULL"),
         ];
         foreach (var (table, column, type) in columns)
 #pragma warning disable EF1002 // identifiers come from the constant list above
             db.Database.ExecuteSqlRaw($"IF COL_LENGTH('{table}', '{column}') IS NULL ALTER TABLE [{table}] ADD [{column}] {type}");
 #pragma warning restore EF1002
+
+        // Photos used to be binary (Employees.Photo). Move them to base64 text once and free the old copy.
+        // Dynamic SQL, because a database created by this version has no Photo column at all.
+        db.Database.ExecuteSqlRaw(
+            "IF COL_LENGTH('Employees', 'Photo') IS NOT NULL EXEC('" +
+            "UPDATE Employees SET PhotoBase64 = CAST('''' AS XML).value(''xs:base64Binary(sql:column(\"Photo\"))'', ''varchar(max)''), " +
+            "Photo = NULL WHERE Photo IS NOT NULL AND PhotoBase64 IS NULL')");
     }
 
     public static string GetSetting(string key, string fallback = "")

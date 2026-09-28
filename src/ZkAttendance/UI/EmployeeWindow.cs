@@ -35,7 +35,7 @@ public class EmployeeWindow : Form
     private readonly NumericUpDown _otRate = new() { Maximum = 1_000_000, DecimalPlaces = 2, ThousandsSeparator = true, Increment = 10 };
 
     private Employee? _current;
-    private byte[]? _photoBytes;
+    private string? _photoBase64;
     private int? _initialDept;
     private bool _loading;
 
@@ -203,7 +203,7 @@ public class EmployeeWindow : Form
         _photo.Size = new Size(116, 140);
         var load = Ui.Button("", (_, _) => LoadPhoto());
         load.Image = Icons.Get(Icons.Folder, Color.DarkGoldenrod);
-        var clear = Ui.Button("", (_, _) => { _photoBytes = null; _photo.Image = null; });
+        var clear = Ui.Button("", (_, _) => { _photoBase64 = null; _photo.Image = null; });
         clear.Image = Icons.Get(Icons.Delete, Color.Red);
         foreach (var (b, x) in new[] { (load, 12), (clear, 72) })
         {
@@ -359,8 +359,8 @@ public class EmployeeWindow : Form
         SelectById(_shift, e.ShiftId);
         _salary.Value = Math.Clamp(e.MonthlySalary, _salary.Minimum, _salary.Maximum);
         _otRate.Value = Math.Clamp(e.OtRatePerHour, _otRate.Minimum, _otRate.Maximum);
-        _photoBytes = e.Photo;
-        _photo.Image = e.Photo is { Length: > 0 } ? Image.FromStream(new MemoryStream(e.Photo)) : null;
+        _photoBase64 = e.PhotoBase64;
+        _photo.Image = PhotoStore.Decode(e.PhotoBase64);
         FillFingers(e.Fingers.Select(f => f.FingerIndex).ToHashSet());
     }
 
@@ -380,7 +380,7 @@ public class EmployeeWindow : Form
         if (_shift.Items.Count > 1) _shift.SelectedIndex = 1; else _shift.SelectedIndex = 0;
         _salary.Value = 0;
         _otRate.Value = 0;
-        _photoBytes = null;
+        _photoBase64 = null;
         _photo.Image = null;
         FillFingers([]);
         _grid.ClearSelection();
@@ -416,7 +416,7 @@ public class EmployeeWindow : Form
             e.ShiftId = (_shift.SelectedItem as Shift)?.Id;
             e.MonthlySalary = _salary.Value;
             e.OtRatePerHour = _otRate.Value;
-            e.Photo = _photoBytes;
+            e.PhotoBase64 = _photoBase64;
             if (_current == null) db.Employees.Add(e);
             else if (oldEnroll != enroll)
                 db.AttendanceLogs.Where(a => a.EnrollNo == oldEnroll).ExecuteUpdate(s => s.SetProperty(a => a.EnrollNo, enroll));
@@ -557,13 +557,14 @@ public class EmployeeWindow : Form
     {
         using var d = new OpenFileDialog { Filter = "Images (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp" };
         if (d.ShowDialog(this) != DialogResult.OK) return;
-        using var src = Image.FromFile(d.FileName);
-        double scale = Math.Min(1.0, 300.0 / Math.Max(src.Width, src.Height));
-        using var bmp = new Bitmap(src, new Size((int)(src.Width * scale), (int)(src.Height * scale)));
-        using var ms = new MemoryStream();
-        bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
-        _photoBytes = ms.ToArray();
-        _photo.Image = Image.FromStream(new MemoryStream(_photoBytes));
+        try
+        {
+            using var src = Image.FromFile(d.FileName);
+            _photoBase64 = PhotoStore.Encode(src);
+            _photo.Image = PhotoStore.Decode(_photoBase64);
+            Ui.Info("Photo lag gayi. 'Save' ya 'Upload' dabane par database me save hogi.");
+        }
+        catch (Exception ex) { Ui.Error(new Exception("Yeh file photo ki tarah nahi khuli: " + ex.Message)); }
     }
 
     /// <summary>Exports the employees shown in the grid with the same columns Import reads, so the file can be edited and imported back.</summary>

@@ -115,6 +115,7 @@ public class MainForm : Form
         Add(att, "Salary Rule", Icons.Rule, Color.SeaGreen, () => PayrollRuleDialog.ShowRules(this));
 
         var search = new ToolStripMenuItem("Search/Print");
+        Add(search, "Live Log (aaj ke punch)", Icons.Fingerprint, Color.SeaGreen, () => PageWindow.Show(this, new LiveLogPage()));
         Add(search, "Attendance Records (AC Log)", Icons.Search, Theme.Accent, () => PageWindow.Show(this, new AttendanceLogsPage()));
         Add(search, "Attendance Reports", Icons.Report, Theme.Accent, () => PageWindow.Show(this, new ReportsPage()));
 
@@ -165,6 +166,7 @@ public class MainForm : Form
     {
         var t = Bars.Large();
         Bars.Button(t, "Employees", Icons.Get(Icons.People, Color.Chocolate, 32), (_, _) => Safe(() => EmployeeWindow.Open(this)));
+        Bars.Button(t, "Live Log", Icons.Get(Icons.Fingerprint, Color.SeaGreen, 32), (_, _) => Safe(() => PageWindow.Show(this, new LiveLogPage())));
         Bars.Button(t, "AC Log", Icons.Get(Icons.Clock, Theme.Accent, 32), (_, _) => Safe(() => PageWindow.Show(this, new AttendanceLogsPage())));
         Bars.Button(t, "Report", Icons.Get(Icons.Report, Color.SteelBlue, 32), (_, _) => Safe(() => PageWindow.Show(this, new ReportsPage())));
         t.Items.Add(new ToolStripSeparator());
@@ -192,6 +194,7 @@ public class MainForm : Form
     {
         var nav = new NavPanel();
         nav.AddGroup("Data Maintenance")
+            .Item("Live Log (aaj ke punch)", Icons.Get(Icons.Fingerprint, Color.SeaGreen), () => PageWindow.Show(this, new LiveLogPage()))
             .Item("Import Attendance Checking Data", Icons.Get(Icons.Import, Color.Green), ImportAttendance)
             .Item("Export Attendance Checking Data", Icons.Get(Icons.Export, Color.DarkOrange), () => PageWindow.Show(this, new AttendanceLogsPage()))
             .Item("Backup Database", Icons.Get(Icons.Backup, Color.SteelBlue), () => SettingsPage.BackupDatabase(this))

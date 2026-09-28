@@ -42,6 +42,7 @@ public class PageWindow : Form
     private static readonly Dictionary<string, (string glyph, Color color)> PageIcons = new()
     {
         ["AttendanceLogsPage"] = (Icons.Clock, Theme.Accent),
+        ["LiveLogPage"] = (Icons.Fingerprint, Color.SeaGreen),
         ["ReportsPage"] = (Icons.Report, Color.SteelBlue),
         ["ShiftsPage"] = (Icons.Timer, Color.Brown),
         ["LeavePage"] = (Icons.Flag, Color.Purple),

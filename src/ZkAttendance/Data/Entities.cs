@@ -57,7 +57,8 @@ public class Employee
     [MaxLength(250)] public string? HomeAddress { get; set; }
     [MaxLength(100)] public string? Email { get; set; }
     public DateTime? BirthDate { get; set; }
-    public byte[]? Photo { get; set; }
+    /// <summary>Photo as base64 JPEG text (see <see cref="PhotoStore"/>).</summary>
+    public string? PhotoBase64 { get; set; }
     public int? DepartmentId { get; set; }
     public Department? Department { get; set; }
     public int? ShiftId { get; set; }
