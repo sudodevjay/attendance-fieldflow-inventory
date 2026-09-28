@@ -351,7 +351,8 @@ public class EmployeeWindow : Form
         _officeTel.Text = e.OfficeTel; _title.Text = e.Designation; _card.Text = e.CardNo; _mobile.Text = e.Phone;
         _home.Text = e.HomeAddress; _email.Text = e.Email; _password.Text = e.DevicePassword;
         _gender.SelectedItem = e.Gender ?? ""; if (_gender.SelectedIndex < 0) _gender.SelectedIndex = 0;
-        _privilege.SelectedIndex = e.Privilege == 3 ? 1 : 0;
+        // Any non-zero device privilege is an admin (firmware uses 2, 3 or 14), so it must not show as "User".
+        _privilege.SelectedIndex = e.Privilege > 0 ? 1 : 0;
         SetDate(_dob, e.BirthDate); SetDate(_joined, e.JoinDate);
         _active.Checked = e.IsActive;
         _enabledOnDevice.Checked = e.IsActive;
@@ -408,7 +409,8 @@ public class EmployeeWindow : Form
             e.Designation = N(_title.Text); e.CardNo = N(_card.Text); e.Phone = N(_mobile.Text); e.HomeAddress = N(_home.Text);
             e.Email = N(_email.Text); e.DevicePassword = N(_password.Text);
             e.Gender = N(_gender.Text);
-            e.Privilege = _privilege.SelectedIndex == 1 ? 3 : 0;
+            // Keep the device's own admin level; a new admin gets 3 (super admin).
+            e.Privilege = _privilege.SelectedIndex == 1 ? (e.Privilege > 0 ? e.Privilege : 3) : 0;
             e.BirthDate = _dob.Checked ? _dob.Value.Date : null;
             e.JoinDate = _joined.Checked ? _joined.Value.Date : null;
             e.IsActive = _active.Checked && _enabledOnDevice.Checked;
