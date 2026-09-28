@@ -1,3 +1,4 @@
+using System.Globalization;
 using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
 using ZkAttendance.Data;
@@ -30,6 +31,8 @@ public class EmployeeWindow : Form
     private readonly ComboBox _shift = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _active = new() { Text = "Active (attendance calculate hogi)", AutoSize = true };
     private readonly CheckBox _enabledOnDevice = new() { Text = "Device par enabled", AutoSize = true, Checked = true };
+    private readonly NumericUpDown _salary = new() { Maximum = 100_000_000, DecimalPlaces = 2, ThousandsSeparator = true, Increment = 500 };
+    private readonly NumericUpDown _otRate = new() { Maximum = 1_000_000, DecimalPlaces = 2, ThousandsSeparator = true, Increment = 10 };
 
     private Employee? _current;
     private byte[]? _photoBytes;
@@ -86,7 +89,10 @@ public class EmployeeWindow : Form
         Bars.Button(bar, "Browse", Icons.Get(Icons.Refresh, Color.DimGray, 20), (_, _) => LoadGrid());
         bar.Items.Add(new ToolStripSeparator());
         Bars.Button(bar, "Add", Icons.Get(Icons.Add, Theme.Accent, 20), (_, _) => NewEmployee());
-        Bars.Button(bar, "Save", Icons.Get(Icons.Save, Color.FromArgb(40, 90, 160), 20), (_, _) => Save());
+        Bars.Button(bar, "Save", Icons.Get(Icons.Save, Color.FromArgb(40, 90, 160), 20), (_, _) =>
+        {
+            if (Save()) Ui.Info($"Save ho gaya: AC No {_current?.EnrollNo} {_current?.Name}\n\nDevice par bhi yeh naam chahiye to 'Upload' dabayein.");
+        });
         Bars.Button(bar, "Delete", Icons.Get(Icons.Close, Color.Red, 20), (_, _) => Delete());
         Bars.Button(bar, "Cancel", Icons.Get(Icons.Undo, Color.FromArgb(30, 100, 210), 20), (_, _) => ShowDetail(_current?.Id));
         bar.Items.Add(new ToolStripSeparator());
@@ -233,6 +239,13 @@ public class EmployeeWindow : Form
         Field(p, "Department", _dept, 0, y, 100, 200);
         Field(p, "Shift / Timetable", _shift, 0, y += h, 100, 200);
         Field(p, "Email", _email, 0, y += h, 100, 200);
+        Field(p, "Monthly Salary (₹)", _salary, 330, 12, 130, 130);
+        Field(p, "OT Rate / Hour (₹)", _otRate, 330, 40, 130, 130);
+        p.Controls.Add(new Label
+        {
+            Text = "OT rate 0 = salary se apne aap\n(ek ghante ka paisa × OT multiplier, Salary Rule)",
+            Location = new Point(460, 68), AutoSize = true, ForeColor = Theme.Muted
+        });
         _active.Location = new Point(100, y += h + 2);
         p.Controls.Add(_active);
         p.Controls.Add(new Label
@@ -344,6 +357,8 @@ public class EmployeeWindow : Form
         _enabledOnDevice.Checked = e.IsActive;
         SelectById(_dept, e.DepartmentId);
         SelectById(_shift, e.ShiftId);
+        _salary.Value = Math.Clamp(e.MonthlySalary, _salary.Minimum, _salary.Maximum);
+        _otRate.Value = Math.Clamp(e.OtRatePerHour, _otRate.Minimum, _otRate.Maximum);
         _photoBytes = e.Photo;
         _photo.Image = e.Photo is { Length: > 0 } ? Image.FromStream(new MemoryStream(e.Photo)) : null;
         FillFingers(e.Fingers.Select(f => f.FingerIndex).ToHashSet());
@@ -363,6 +378,8 @@ public class EmployeeWindow : Form
         _enabledOnDevice.Checked = true;
         SelectById(_dept, _tree.SelectedNode?.Tag as int?);
         if (_shift.Items.Count > 1) _shift.SelectedIndex = 1; else _shift.SelectedIndex = 0;
+        _salary.Value = 0;
+        _otRate.Value = 0;
         _photoBytes = null;
         _photo.Image = null;
         FillFingers([]);
@@ -370,17 +387,18 @@ public class EmployeeWindow : Form
         _name.Focus();
     }
 
-    private void Save()
+    /// <summary>Saves the detail form; returns false when validation failed or the save threw.</summary>
+    private bool Save()
     {
         try
         {
             var enroll = _acNo.Text.Trim();
-            if (enroll.Length == 0 || _name.Text.Trim().Length == 0) { Ui.Info("AC No aur Name zaroori hain."); return; }
-            if (enroll.Length > 9 || !enroll.All(char.IsDigit)) { Ui.Info("AC No sirf numbers (max 9 digit) — LX50 numeric user ID use karta hai."); return; }
+            if (enroll.Length == 0 || _name.Text.Trim().Length == 0) { Ui.Info("AC No aur Name zaroori hain."); return false; }
+            if (enroll.Length > 9 || !enroll.All(char.IsDigit)) { Ui.Info("AC No sirf numbers (max 9 digit) — LX50 numeric user ID use karta hai."); return false; }
 
             using var db = new AppDbContext();
             if (db.Employees.Any(x => x.EnrollNo == enroll && x.Id != (_current == null ? 0 : _current.Id)))
-            { Ui.Info($"AC No {enroll} pehle se kisi aur employee ka hai."); return; }
+            { Ui.Info($"AC No {enroll} pehle se kisi aur employee ka hai."); return false; }
 
             var e = _current == null ? new Employee() : db.Employees.First(x => x.Id == _current.Id);
             var oldEnroll = e.EnrollNo;
@@ -396,6 +414,8 @@ public class EmployeeWindow : Form
             e.IsActive = _active.Checked && _enabledOnDevice.Checked;
             e.DepartmentId = (_dept.SelectedItem as Department)?.Id;
             e.ShiftId = (_shift.SelectedItem as Shift)?.Id;
+            e.MonthlySalary = _salary.Value;
+            e.OtRatePerHour = _otRate.Value;
             e.Photo = _photoBytes;
             if (_current == null) db.Employees.Add(e);
             else if (oldEnroll != enroll)
@@ -404,8 +424,9 @@ public class EmployeeWindow : Form
             _current = e;
             AppState.RaiseDataChanged();
             LoadGrid(e.Id);
+            return true;
         }
-        catch (Exception ex) { Ui.Error(ex); }
+        catch (Exception ex) { Ui.Error(ex); return false; }
     }
 
     private void Delete()
@@ -475,20 +496,25 @@ public class EmployeeWindow : Form
         using var db = new AppDbContext();
         int n = db.FingerTemplates.Where(x => x.EmployeeId == _current.Id && x.FingerIndex == f).ExecuteDelete();
         if (n == 0) { Ui.Info("Is finger ka template saved nahi hai."); return; }
-        Ui.Info("Fingerprint software se delete ho gaya. Device se hatane ke liye 'Del(Device)' karke dobara 'Upload' karein.");
+        Ui.Info("Fingerprint software se delete ho gaya. Device par yeh finger abhi bhi hai: use device menu " +
+                "(User Mgt → user → Fingerprint) se delete karein.\n\n'Del(Device)' + 'Upload' na karein: LX50 par fingerprint " +
+                "upload nahi hota, isliye user ki saari fingers device se chali jaayengi.");
         ShowDetail(_current.Id);
     }
 
     private async Task UploadSelected()
     {
+        // Upload sends what is saved in the database, so save pending edits of the open employee first
+        // (otherwise a name typed but not saved would silently go to the device as the old name).
+        if (_current != null && !Save()) return;
         var ids = Ui.SelectedIds(_grid);
         if (ids.Count == 0 && _current != null) ids = [_current.Id];
         if (ids.Count == 0) { Ui.Info("Pehle employee select karein."); return; }
         try
         {
             UseWaitCursor = true;
-            await DeviceActions.UploadUsers(DeviceActions.Current(), ids);
-            Ui.Info($"{ids.Count} employee(s) device par upload ho gaye (naam, password, card, fingerprints).");
+            int rejected = await DeviceActions.UploadUsers(DeviceActions.Current(), ids);
+            Ui.Info($"{ids.Count} employee(s) device par upload ho gaye (naam, password, card, fingerprints)." + DeviceActions.RejectedFingersNote(rejected));
         }
         catch (Exception ex) { Ui.Error(ex); }
         finally { UseWaitCursor = false; }
@@ -540,25 +566,37 @@ public class EmployeeWindow : Form
         _photo.Image = Image.FromStream(new MemoryStream(_photoBytes));
     }
 
+    /// <summary>Exports the employees shown in the grid with the same columns Import reads, so the file can be edited and imported back.</summary>
     private void ExportExcel()
     {
         if (_grid.DataSource is not System.Data.DataTable t) return;
+        var ids = t.Rows.Cast<System.Data.DataRow>().Select(r => (int)r["Id"]).ToList();
         var path = Ui.SaveFile("Excel (*.xlsx)|*.xlsx", $"Employees_{DateTime.Today:yyyyMMdd}.xlsx");
         if (path == null) return;
         try
         {
-            var copy = t.Copy();
-            copy.Columns.Remove("Id");
-            ExcelExporter.Export(new ReportResult { Title = "Employee List", Subtitle = $"{copy.Rows.Count} employees", Table = copy }, path);
-            Ui.Info("Export ho gaya: " + path);
+            using var db = new AppDbContext();
+            var emps = db.Employees.AsNoTracking().Include(e => e.Department).Include(e => e.Shift).Where(e => ids.Contains(e.Id))
+                .AsEnumerable().OrderBy(e => AttendanceProcessor.SortKey(e.EnrollNo)).ToList();
+            var table = new System.Data.DataTable();
+            foreach (var c in ExportColumns) table.Columns.Add(c);
+            foreach (var e in emps)
+                table.Rows.Add(e.EnrollNo, e.Name, e.BadgeNo, e.Gender, e.Designation, e.Phone, e.CardNo, e.Department?.Name, e.Shift?.Name,
+                    e.JoinDate?.ToString("dd-MM-yyyy"), e.MonthlySalary.ToString("0.00", CultureInfo.InvariantCulture),
+                    e.OtRatePerHour.ToString("0.00", CultureInfo.InvariantCulture));
+            ExcelExporter.Export(new ReportResult { Title = "Employee List", Subtitle = $"{table.Rows.Count} employees", Table = table }, path);
+            Ui.Info("Export ho gaya: " + path + "\n\nIsi file me badlav karke 'Import' se wapas daal sakte hain.");
         }
         catch (Exception ex) { Ui.Error(ex); }
     }
 
+    private static readonly string[] ExportColumns =
+        ["AC No", "Name", "No.", "Gender", "Title", "Mobile", "Card", "Department", "Shift", "Join Date", "Monthly Salary", "OT Rate / Hour"];
+
     /// <summary>Imports employees from an Excel sheet whose first row has headers like "AC No", "Name", "Department" ...</summary>
     private void ImportExcel()
     {
-        using var d = new OpenFileDialog { Filter = "Excel (*.xlsx)|*.xlsx", Title = "Import Employees (columns: AC No, Name, No., Gender, Title, Mobile, Card, Department, Join Date)" };
+        using var d = new OpenFileDialog { Filter = "Excel (*.xlsx)|*.xlsx", Title = "Import Employees (columns: AC No, Name, No., Gender, Title, Mobile, Card, Department, Shift, Join Date, Monthly Salary, OT Rate / Hour)" };
         if (d.ShowDialog(this) != DialogResult.OK) return;
         try
         {
@@ -570,10 +608,12 @@ public class EmployeeWindow : Form
             int Col(params string[] names) => names.Select(n => cols.GetValueOrDefault(n)).FirstOrDefault(n => n > 0);
             int cAc = Col("acno", "userid", "enrollno"), cName = Col("name"), cNo = Col("no", "badgeno"), cGender = Col("gender"),
                 cTitle = Col("title", "designation"), cMobile = Col("mobile", "mobileno", "mobilepager", "phone"), cCard = Col("card", "cardnumber", "cardno"),
-                cDept = Col("department", "dept"), cJoin = Col("joindate", "dateofemployment");
+                cDept = Col("department", "dept"), cJoin = Col("joindate", "dateofemployment"), cShift = Col("shift", "timetable"),
+                cSalary = Col("monthlysalary", "salary"), cOt = Col("otratehour", "otrate", "otrateperhour");
 
             using var db = new AppDbContext();
             var depts = db.Departments.ToList();
+            var shifts = db.Shifts.ToList();
             var emps = db.Employees.ToDictionary(e => e.EnrollNo);
             var shift = db.Shifts.OrderBy(s => s.Id).Select(s => (int?)s.Id).FirstOrDefault();
             int added = 0, updated = 0;
@@ -597,7 +637,15 @@ public class EmployeeWindow : Form
                 if (Get(cTitle) is { Length: > 0 } ti) e.Designation = ti;
                 if (Get(cMobile) is { Length: > 0 } mo) e.Phone = mo;
                 if (Get(cCard) is { Length: > 0 } ca) e.CardNo = ca;
-                if (cJoin > 0 && row.Cell(cJoin).TryGetValue(out DateTime jd)) e.JoinDate = jd.Date;
+                // Text dates are day-first (as exported); only real Excel date cells go through ClosedXML,
+                // whose text parsing would follow the PC's regional format (01-02 = 2 Jan on a US setting).
+                if (DateTime.TryParseExact(Get(cJoin), ["dd-MM-yyyy", "dd/MM/yyyy", "d-M-yyyy", "d/M/yyyy", "yyyy-MM-dd"],
+                        CultureInfo.InvariantCulture, DateTimeStyles.None, out var jd)) e.JoinDate = jd;
+                else if (cJoin > 0 && row.Cell(cJoin).DataType == XLDataType.DateTime) e.JoinDate = row.Cell(cJoin).GetDateTime().Date;
+                if (Money(Get(cSalary)) is decimal sal) e.MonthlySalary = sal;
+                if (Money(Get(cOt)) is decimal ot) e.OtRatePerHour = ot;
+                if (Get(cShift) is { Length: > 0 } sn && shifts.FirstOrDefault(x => x.Name.Equals(sn, StringComparison.OrdinalIgnoreCase)) is { } sh)
+                    e.ShiftId = sh.Id;
                 if (Get(cDept) is { Length: > 0 } dn)
                 {
                     var dep = depts.FirstOrDefault(x => x.Name.Equals(dn, StringComparison.OrdinalIgnoreCase));
@@ -612,6 +660,13 @@ public class EmployeeWindow : Form
             Ui.Info($"Import complete.\nNew: {added}\nUpdated: {updated}");
         }
         catch (Exception ex) { Ui.Error(ex); }
+    }
+
+    /// <summary>Reads "25000", "25,000.00" or "₹ 25,000" as an amount; null when the cell is empty or not a number.</summary>
+    private static decimal? Money(string s)
+    {
+        var clean = new string(s.Where(ch => char.IsDigit(ch) || ch == '.').ToArray());
+        return decimal.TryParse(clean, NumberStyles.Number, CultureInfo.InvariantCulture, out var v) ? v : null;
     }
 
     private static string Norm(string s) => new(s.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());

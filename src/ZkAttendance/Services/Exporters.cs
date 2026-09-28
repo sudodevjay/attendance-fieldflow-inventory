@@ -78,12 +78,13 @@ public static class PdfExporter
         var company = ReportService.CompanyName;
         var address = ReportService.CompanyAddress;
 
-        // Relative widths from content length so names/remarks get more room than codes.
+        // Relative widths from content length so names/remarks get more room than codes. Headers wrap at spaces,
+        // so only their longest word counts (otherwise "Monthly Salary" squeezes the Name column).
         var widths = Enumerable.Range(0, cols).Select(c =>
         {
-            int max = t.Columns[c].ColumnName.Length;
+            int max = t.Columns[c].ColumnName.Split(' ').Max(w => w.Length);
             foreach (DataRow row in t.Rows) max = Math.Max(max, row[c]?.ToString()?.Length ?? 0);
-            return (float)Math.Clamp(max, 2, 32);
+            return (float)Math.Clamp(max, 4, 32);
         }).ToArray();
 
         Document.Create(doc => doc.Page(page =>

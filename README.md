@@ -72,10 +72,38 @@ SDK na ho tab bhi baaki sab (employees, reports, pendrive import) chalta hai; si
 
 ## LX50 connect karna
 
-1. Device ko Mini-USB (USB Client) cable se PC se jodein.
-2. Main window → Machine List me device **3 (USB)** chunein (ya toolbar **Device** se naya add karein: Comm type = USB, Machine No. = 1, Comm Key = 0) → toolbar **Connect**.
-3. Agar USB se connect na ho: Device Manager me dekhein ki cable lagane par koi **COM port** bana hai kya (ZKTeco USB driver / CP210x / CH340). Bana hai to device edit karke Comm type = *Serial Port/RS485*, woh COM port aur baud rate (device menu → Comm → Baudrate, aam taur par 115200) daalein.
-4. Connect hone par Machine List me Status = Connected, ProductName, UserCount, Serial Number dikhenge aur log me `Succeed in connecting with device` aayega.
+LX50 ke ports: **DC pin** = power, **bada USB (Type-A)** = pendrive, **mini/micro USB** = PC se connection (USB Client).
+
+**USB driver (ek baar, har PC par):** LX50 PC par `USB\VID_1B55&PID_0A01` ke roop me dikhta hai aur SDK ki `usbstd.dll`
+ise **libusb-win32 (libusb0)** se kholti hai. Device Manager me yellow ! (code 28) ho to:
+[Zadig](https://zadig.akeo.ie/) chalayein → Options → *List All Devices* → USB ID `1B55 0A01` wala device chunein →
+driver **libusb-win32** (WinUSB / libusbK nahi) → *Install Driver* → cable dobara lagayein. Device Manager me
+*libusb-win32 devices* ke neeche OK dikhega. (ZKTime 5.0 ke `USBDriver\X20\ZKFP.inf` ki catalog hash mismatch deti hai, use install na karein.)
+SDK: ZKTime 5.0 / Standalone SDK ka `zkemkeeper` 6.2.5.7 (usbstd.dll ke saath) `SysWOW64` me copy karke `SysWOW64\regsvr32` se register karein.
+
+Tested: LX50, firmware Ver 6.60 May 19 2023, platform AK3750WIFI_TFT, ZKFinger v13: connect, info, logs, users, fingerprint download OK.
+
+1. Device ko DC adapter se ON karein aur mini/micro USB **data cable** se PC se jodein.
+2. Main window → Machine List me device **3 (USB)** chunein (ya toolbar **Device** se naya add karein: Comm type = USB,
+   Machine No. = device menu → Comm → Device ID (default 1), Comm Key = device ka Comm Key (default 0)) → toolbar **Connect**.
+3. **Auto detect**: USB se connect na ho to software khud try karta hai: USB (Machine No. aapka / 1), phir PC ke har
+   COM port par baud 115200 / 38400 / 57600 / 19200 / 9600. Log me `Trying COM5 @ 115200...` dikhega. Device mil gaya to
+   woh settings (jaise Serial Port/RS485, COM5, 115200) apne aap save ho jaati hain, agli baar seedha connect hoga.
+4. Kuch na mile to error me COM ports ki list aur checklist aati hai. Device Manager me cable nikaal ke dobara lagayein:
+   *Ports (COM & LPT)* me naya port ya *ZKTeco USB* device aana chahiye; yellow ! ho to driver (ZKTeco USB Client / CP210x / CH340) install karein.
+5. Connect hone par Machine List me Status = Connected, ProductName, UserCount, Serial Number dikhenge aur log me `Succeed in connecting with device` aayega.
+6. Cable hil jaaye ya device sleep ho jaaye to agla command (Download etc.) ek baar apne aap reconnect karke dobara chalta hai.
+
+**LX50 (FW 6.60, ZKFinger v13) ki seema (device par test kiya):**
+- *Remote enroll* nahi hota (`StartEnrollEx` / `StartEnroll` dono false). Finger device par enroll karein:
+  Menu → User Mgt → AC No → Fingerprint → 3 baar; phir auto-sync / *Download user info and Fp* se software me aa jaata hai.
+- Fingerprint template *upload* nahi hota (SDK 6.2.5.7 har v13 template par error -3 deta hai); naam, password, privilege,
+  card upload aur user delete theek chalte hain. Software ab batata hai kitne fingerprint reject hue.
+- Legacy integer API `GetUserTmpStr` is firmware par hang hoti hai, isliye sirf B&W firmware par try hoti hai.
+
+Mini-USB se ye sab hota hai: Download attendance logs, Download user info and Fp, Upload user info and FP, Delete user,
+Synchronize Time, Device Information, Clear Attendance Logs, Restart. Fingerprint ke liye naye (TmpEx / SSR) aur purane
+B&W (integer ID) teeno SDK APIs try hote hain; jo chale wahi aage use hota hai.
 
 > Note: Maine yeh code aapke device par test nahi kiya hai (yahan device nahi hai). Firmware ke hisab se kuch SDK calls alag behave kar sakti hain; code SSR (new) aur legacy (old B&W) dono APIs try karta hai. Error aaye to Device page ka log / error code bhejein.
 
@@ -84,12 +112,36 @@ SDK na ho tab bhi baaki sab (employees, reports, pendrive import) chalta hai; si
 Device menu → **USB Mgmt / PenDrive Mgmt → Download AttLog** → pendrive PC par lagayein →
 Main window → **Data Maintenance → Import Attendance Checking Data** → `1_attlog.dat` ya `GLG_001.TXT` chunein. Duplicates apne aap skip hote hain.
 
+## Auto-sync (USB / Serial / Ethernet)
+
+Software khula rahe to har **5 minute** (Database Option → *Auto-sync: har X minute*, 0 = band) yeh apne aap hota hai:
+- Device se sirf ginti (logs / users / fingerprints) padhi jaati hai; badli ho tabhi download hota hai (keypad bina wajah lock nahi hota).
+- Naye punch → database + records grid; naye users / fingerprint → Employees (software me badle naam overwrite nahi hote).
+- Roz ek baar device ka time PC se sync.
+- Device ki log memory 80% bharne par log me WARNING (tab *Clear Attendance Logs* karein, data pehle hi download ho chuka hota hai).
+- Cable nikle / device off ho to popup nahi: log me ek line, aur har 5 minute chup-chaap dobara try. Toolbar se **Disconnect**
+  karne par us device ka auto-sync ruk jaata hai; Connect karne par phir shuru.
+- Download sirf padhta hai, isliye isse device ki memory nahi bharti.
+
 ## Roz ka workflow
 
 1. Device select → **Connect** → Machine → **Download attendance logs** (ya Database Option me auto-download ON karein)
 2. Naye AC No. "User 5" jaise naam se aate hain → **Employees** window me naam, department, shift bharein
    (ya **Download user info and Fp** se device ke naam le lein)
 3. **Report** → report chunein → **Generate** → **Excel / PDF**
+
+## Salary aur leave
+
+- **Salary**: Employees → *Addition* tab → *Monthly Salary (₹)* aur *OT Rate / Hour* (0 = salary se apne aap).
+- **Salary Rule** (Attendance menu / Maintenance): kitni baar late = ½ din cut (default 3, 0 = band), OT multiplier (default 1).
+- **Hisaab** (Report → *Salary Sheet (Monthly Pay)*, Excel / PDF):
+  ek din = Salary ÷ mahine ke din; Payable Days = Paid Days − late cut; Salary = ek din × Payable Days;
+  OT = OT ghante × rate (rate 0 ho to ek din ÷ shift ke ghante × multiplier); Net Pay = Salary + OT.
+  Ek employee chunkar generate karein to uski salary slip jaisi report banti hai.
+- **Leave quota**: Leave / Holidays → *Leave Types* → Edit → *Yearly quota* (jaise CL 12). Quota khatam hone ke baad li gayi
+  leave us din `LWP` (bina paise) dikhti hai aur Paid Days me nahi judti. Leave ke beech ke weekly off / holiday leave me nahi gine jaate.
+- **Leave Balance**: Leave / Holidays → *Leave Balance* tab, ya Report → *Leave Balance (Yearly)*: quota, li gayi leave
+  (aage ki planned bhi), balance. Quota se zyada leave daalte waqt software pehle chetavni deta hai.
 
 ## Attendance rules
 

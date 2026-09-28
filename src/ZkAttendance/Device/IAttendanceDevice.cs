@@ -32,7 +32,12 @@ public interface IAttendanceDevice : IDisposable
     DeviceFeatures Features { get; }
     bool IsConnected { get; }
 
-    Task ConnectAsync(DeviceProfile profile);
+    /// <summary>
+    /// Connects and returns the settings that actually worked. A driver may auto-detect (e.g. USB → virtual COM port),
+    /// so the result can differ from <paramref name="profile"/>; the caller saves it back. Progress lines go to the log.
+    /// <paramref name="autoDetect"/> = false tries only the saved settings (used by background auto-sync).
+    /// </summary>
+    Task<DeviceProfile> ConnectAsync(DeviceProfile profile, IProgress<string>? progress = null, bool autoDetect = true);
     Task DisconnectAsync();
     Task<DeviceInfo> GetInfoAsync();
     Task SyncTimeAsync();
@@ -57,6 +62,18 @@ public static class DeviceDrivers
     public static readonly string[] KindNames = ["USB", "Serial Port/RS485", "Ethernet", "ADMS (Push / Cloud)"];
 
     public static string KindName(ConnectionKind k) => KindNames[(int)k];
+
+    /// <summary>COM ports present on this PC (a USB-client device with a virtual COM driver appears here).</summary>
+    public static string[] ComPorts()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"HARDWARE\DEVICEMAP\SERIALCOMM");
+            return key?.GetValueNames().Select(n => key.GetValue(n)?.ToString() ?? "").Where(s => s != "")
+                       .OrderBy(s => s.Length).ThenBy(s => s).ToArray() ?? [];
+        }
+        catch { return []; }
+    }
 
     public static void Require(this IAttendanceDevice d, DeviceFeatures f, string what)
     {

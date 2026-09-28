@@ -282,13 +282,13 @@ public static class Bars
     public static ToolStrip Large() => new()
     {
         GripStyle = ToolStripGripStyle.Hidden, ImageScalingSize = new Size(32, 32), Renderer = BlueColorTable.Renderer,
-        Padding = new Padding(6, 2, 6, 2), Font = Theme.Base, Dock = DockStyle.Top, AutoSize = true
+        Padding = new Padding(6, 2, 6, 2), Font = Theme.Base, Dock = DockStyle.Top, AutoSize = true, ShowItemToolTips = false
     };
 
     public static ToolStrip Medium() => new()
     {
         GripStyle = ToolStripGripStyle.Hidden, ImageScalingSize = new Size(20, 20), Renderer = BlueColorTable.Renderer,
-        Padding = new Padding(4, 1, 4, 1), Font = Theme.Base, Dock = DockStyle.Top, AutoSize = true
+        Padding = new Padding(4, 1, 4, 1), Font = Theme.Base, Dock = DockStyle.Top, AutoSize = true, ShowItemToolTips = false
     };
 
     public static ToolStripButton Button(ToolStrip bar, string text, Image image, EventHandler onClick)

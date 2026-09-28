@@ -61,11 +61,12 @@ public class ReportsPage : PageBase
     {
         var sel = Selected;
         bool single = sel.kind == ReportKind.DailyAttendance;
-        _toLabel.Visible = _to.Visible = !single && !sel.monthly;
-        _fromLabel.Text = sel.monthly ? "Month" : single ? "Date" : "From";
-        _from.CustomFormat = sel.monthly ? "MMMM yyyy" : "dd-MM-yyyy";
-        _from.ShowUpDown = sel.monthly;
-        if (!single && !sel.monthly && _from.Value.Date == _to.Value.Date)
+        bool yearly = sel.kind == ReportKind.LeaveBalance;
+        _toLabel.Visible = _to.Visible = !single && !sel.monthly && !yearly;
+        _fromLabel.Text = yearly ? "Year" : sel.monthly ? "Month" : single ? "Date" : "From";
+        _from.CustomFormat = yearly ? "yyyy" : sel.monthly ? "MMMM yyyy" : "dd-MM-yyyy";
+        _from.ShowUpDown = sel.monthly || yearly;
+        if (!single && !sel.monthly && !yearly && _from.Value.Date == _to.Value.Date)
             _from.Value = new DateTime(_to.Value.Year, _to.Value.Month, 1);
     }
 
@@ -76,8 +77,9 @@ public class ReportsPage : PageBase
         int? emp = (_emp.SelectedItem as Employee)?.Id;
         var from = _from.Value.Date;
         var to = _to.Value.Date;
-        if (!sel.monthly && sel.kind != ReportKind.DailyAttendance && to < from) { Ui.Info("'To' date 'From' se pehle hai."); return; }
-        if ((to - from).TotalDays > 400) { Ui.Info("Maximum 400 din ki report ek baar me."); return; }
+        bool range = !sel.monthly && sel.kind is not (ReportKind.DailyAttendance or ReportKind.LeaveBalance);
+        if (range && to < from) { Ui.Info("'To' date 'From' se pehle hai."); return; }
+        if (range && (to - from).TotalDays > 400) { Ui.Info("Maximum 400 din ki report ek baar me."); return; }
 
         _result = await Task.Run(() => ReportService.Build(sel.kind, from, to, dept, emp));
         _statusCols.Clear();

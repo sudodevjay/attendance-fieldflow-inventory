@@ -66,6 +66,10 @@ public class Employee
     public int Privilege { get; set; }
     [MaxLength(20)] public string? DevicePassword { get; set; }
     [MaxLength(20)] public string? CardNo { get; set; }
+    /// <summary>Fixed monthly salary; one day = salary ÷ days in the month.</summary>
+    public decimal MonthlySalary { get; set; }
+    /// <summary>Overtime pay per hour; 0 = derived from the salary (per-day ÷ shift hours × OT multiplier).</summary>
+    public decimal OtRatePerHour { get; set; }
     public bool IsActive { get; set; } = true;
     public List<FingerTemplate> Fingers { get; set; } = new();
     public override string ToString() => $"{EnrollNo} - {Name}";
@@ -103,6 +107,8 @@ public class LeaveType
     [MaxLength(50)] public string Name { get; set; } = "";
     [MaxLength(10)] public string Code { get; set; } = "";
     public bool IsPaid { get; set; } = true;
+    /// <summary>Paid days allowed per calendar year; beyond it the leave counts as unpaid (LWP). 0 = no limit.</summary>
+    public double YearlyQuota { get; set; }
     public override string ToString() => $"{Code} - {Name}";
 }
 

@@ -25,6 +25,8 @@ public class AppDbContext : DbContext
         b.Entity<Employee>().HasIndex(e => e.EnrollNo).IsUnique();
         b.Entity<Employee>().HasOne(e => e.Department).WithMany().OnDelete(DeleteBehavior.SetNull);
         b.Entity<Employee>().HasOne(e => e.Shift).WithMany().OnDelete(DeleteBehavior.SetNull);
+        b.Entity<Employee>().Property(e => e.MonthlySalary).HasPrecision(18, 2);
+        b.Entity<Employee>().Property(e => e.OtRatePerHour).HasPrecision(18, 2);
         b.Entity<FingerTemplate>().HasIndex(f => new { f.EmployeeId, f.FingerIndex }).IsUnique();
         b.Entity<AttendanceLog>().HasIndex(a => new { a.EnrollNo, a.PunchTime }).IsUnique();
         b.Entity<AttendanceLog>().HasIndex(a => a.PunchTime);
@@ -80,6 +82,9 @@ public class AppDbContext : DbContext
             ("DeviceProfiles", "FaceCount", "int NULL"),
             ("DeviceProfiles", "PasswordCount", "int NULL"),
             ("DeviceProfiles", "LogCount", "int NULL"),
+            ("Employees", "MonthlySalary", "decimal(18,2) NOT NULL DEFAULT 0"),
+            ("Employees", "OtRatePerHour", "decimal(18,2) NOT NULL DEFAULT 0"),
+            ("LeaveTypes", "YearlyQuota", "float NOT NULL DEFAULT 0"),
         ];
         foreach (var (table, column, type) in columns)
 #pragma warning disable EF1002 // identifiers come from the constant list above

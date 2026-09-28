@@ -76,12 +76,14 @@ public class MainForm : Form
         AppState.Logged += (id, msg) => BeginInvokeSafe(() => AddLog(id, msg));
         AppState.DeviceStatusChanged += () => BeginInvokeSafe(LoadMachines);
         AdmsHost.LivePunches += (_, name, punches) => BeginInvokeSafe(() => ShowRecords(punches, name));
+        AutoSync.NewPunches += (p, punches) => BeginInvokeSafe(() => ShowRecords(punches, p.Name));
         Shown += (_, _) =>
         {
             LoadMachines();
             _clock.Text = DateTime.Now.ToString("hh:mm:ss tt");
             try { AdmsHost.StartIfEnabled(); }
             catch (Exception ex) { AppState.Log(0, "ADMS server start failed: " + ex.Message); }
+            AutoSync.Start();
         };
         // ADMS devices go online/offline on their own; refresh the Online status periodically.
         var statusTimer = new System.Windows.Forms.Timer { Interval = 15000 };
@@ -110,6 +112,7 @@ public class MainForm : Form
         Add(att, "Leave / Holidays", Icons.Flag, Color.Purple, () => PageWindow.Show(this, new LeavePage()));
         Add(att, "Append Manual Record (AC Log)", Icons.Clock, Theme.Accent, () => PageWindow.Show(this, new AttendanceLogsPage()));
         Add(att, "Attendance Rule", Icons.Rule, Color.SteelBlue, () => AttendanceRuleDialog.ShowRules(this));
+        Add(att, "Salary Rule", Icons.Rule, Color.SeaGreen, () => PayrollRuleDialog.ShowRules(this));
 
         var search = new ToolStripMenuItem("Search/Print");
         Add(search, "Attendance Records (AC Log)", Icons.Search, Theme.Accent, () => PageWindow.Show(this, new AttendanceLogsPage()));
@@ -123,6 +126,7 @@ public class MainForm : Form
         Add(maint, "Maintenance Timetables", Icons.Timer, Color.Brown, () => PageWindow.Show(this, new ShiftsPage()));
         Add(maint, "Holidays / Leave Class", Icons.Sun, Color.DarkOrange, () => PageWindow.Show(this, new LeavePage()));
         Add(maint, "Attendance Rule", Icons.Rule, Color.SteelBlue, () => AttendanceRuleDialog.ShowRules(this));
+        Add(maint, "Salary Rule", Icons.Rule, Color.SeaGreen, () => PayrollRuleDialog.ShowRules(this));
         maint.DropDownItems.Add(new ToolStripSeparator());
         Add(maint, "Database Option...", Icons.Settings, Color.DimGray, () => PageWindow.Show(this, new SettingsPage()));
 
@@ -207,7 +211,9 @@ public class MainForm : Form
             .Item("Maintenance Timetables", Icons.Get(Icons.Timer, Color.Brown), () => PageWindow.Show(this, new ShiftsPage()))
             .Item("Shifts Management", Icons.Get(Icons.Calendar, Color.Brown), () => PageWindow.Show(this, new ShiftsPage()))
             .Item("Employee Schedule", Icons.Get(Icons.Table, Color.Brown), () => EmployeeScheduleWindow.Open(this))
-            .Item("Attendance Rule", Icons.Get(Icons.Rule, Theme.Accent), () => AttendanceRuleDialog.ShowRules(this));
+            .Item("Attendance Rule", Icons.Get(Icons.Rule, Theme.Accent), () => AttendanceRuleDialog.ShowRules(this))
+            .Item("Salary Rule", Icons.Get(Icons.Rule, Color.SeaGreen), () => PayrollRuleDialog.ShowRules(this))
+            .Item("Leave / Holidays", Icons.Get(Icons.Flag, Color.Purple), () => PageWindow.Show(this, new LeavePage()));
         return nav;
     }
 
@@ -419,8 +425,8 @@ public class MainForm : Form
             return Task.CompletedTask;
         return OnSelected("Upload user info and FP", async (p, _) =>
         {
-            await DeviceActions.UploadUsers(p, ids);
-            Ui.Info($"{p.Name}: {ids.Count} users upload ho gaye.");
+            int rejected = await DeviceActions.UploadUsers(p, ids);
+            Ui.Info($"{p.Name}: {ids.Count} users upload ho gaye." + DeviceActions.RejectedFingersNote(rejected));
         });
     }
 
@@ -430,9 +436,11 @@ public class MainForm : Form
         var i = await d.GetInfoAsync();
         await DeviceActions.RefreshInfo(p.Id);
         Ui.Info($"Device        : {p.Name}\nDriver        : {d.Driver} ({DeviceDrivers.KindName(p.Kind)})\nProduct       : {i.ProductName}\nSerial Number : {i.SerialNumber}\nFirmware      : {i.Firmware}\n" +
-                $"Platform      : {i.Platform}\nUsers         : {i.UserCount}  (Admin {i.AdminCount})\nFingerprints  : {i.FingerCount}\n" +
-                $"Passwords     : {i.PasswordCount}\nAtt. Logs     : {i.LogCount}\nDevice Time   : {i.DeviceTime:dd-MM-yyyy HH:mm:ss}\nPC Time       : {DateTime.Now:dd-MM-yyyy HH:mm:ss}");
+                $"Platform      : {i.Platform}\nUsers         : {i.UserCount}{Cap(i.UserCapacity)}  (Admin {i.AdminCount})\nFingerprints  : {i.FingerCount}{Cap(i.FingerCapacity)}\n" +
+                $"Passwords     : {i.PasswordCount}\nAtt. Logs     : {i.LogCount}{Cap(i.LogCapacity)}\nDevice Time   : {i.DeviceTime:dd-MM-yyyy HH:mm:ss}\nPC Time       : {DateTime.Now:dd-MM-yyyy HH:mm:ss}");
     });
+
+    private static string Cap(int capacity) => capacity > 0 ? $" / {capacity}" : "";
 
     private Task ClearLogs()
     {
@@ -470,7 +478,7 @@ public class MainForm : Form
         var name = dlg.AddText("Device Name", p.Name);
         var kind = dlg.AddCombo("Comm type", kinds, kinds[(int)p.Kind]);
         var machine = dlg.AddNumber("Machine No.", p.MachineNumber, 1, 255);
-        var com = dlg.AddCombo("Port (COM)", ComPorts().Append(p.ComPort).Distinct(), p.ComPort);
+        var com = dlg.AddCombo("Port (COM)", DeviceDrivers.ComPorts().Append(p.ComPort).Distinct(), p.ComPort);
         com.DropDownStyle = ComboBoxStyle.DropDown;
         var baud = dlg.AddCombo("Baud Rate", ["9600", "19200", "38400", "57600", "115200"], p.BaudRate.ToString());
         var ip = dlg.AddText("IP Address", p.IpAddress);
@@ -478,6 +486,8 @@ public class MainForm : Form
         var key = dlg.AddNumber("Comm Key (Password)", p.CommPassword, 0, 999999);
         var sn = dlg.AddText("Serial Number (ADMS)", p.SerialNumber);
         dlg.AddNote("USB / Serial / Ethernet: ZKTeco SDK se (LX50, K-series, iClock, eSSL, B&W aur TFT sab).\n" +
+                    "LX50 mini-USB: Comm type = USB rakhein. Connect na ho to software khud saare COM ports / baud rates " +
+                    "try karke jo setting chale use save kar leta hai.\n" +
                     "ADMS (Push / Cloud): device khud is PC par data bhejta hai. Device menu → Comm → Cloud Server Setting me " +
                     $"is PC ka IP aur port {AdmsHost.ConfiguredPort} daalein; Serial Number device ke System Info me milega.\n" +
                     "Comm Key device menu jaisa hi ho (default 0).");
@@ -556,16 +566,6 @@ public class MainForm : Form
         var path = Path.Combine(AppContext.BaseDirectory, "README.md");
         if (File.Exists(path)) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("notepad.exe", $"\"{path}\""));
         else Ui.Info("README.md nahi mili.");
-    }
-
-    private static string[] ComPorts()
-    {
-        try
-        {
-            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"HARDWARE\DEVICEMAP\SERIALCOMM");
-            return key?.GetValueNames().Select(n => key.GetValue(n)?.ToString() ?? "").Where(s => s != "").OrderBy(s => s).ToArray() ?? [];
-        }
-        catch { return []; }
     }
 
     private static void Safe(Action a)

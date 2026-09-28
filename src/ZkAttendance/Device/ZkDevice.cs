@@ -18,7 +18,8 @@ public class DeviceUser
 }
 
 public record DeviceInfo(string SerialNumber, string Firmware, string Platform, string ProductName, int UserCount, int AdminCount,
-    int FingerCount, int FaceCount, int PasswordCount, int LogCount, DateTime? DeviceTime);
+    int FingerCount, int FaceCount, int PasswordCount, int LogCount, DateTime? DeviceTime,
+    int UserCapacity = 0, int FingerCapacity = 0, int LogCapacity = 0);
 
 public class DeviceException(string message) : Exception(message);
 
@@ -46,27 +47,97 @@ public sealed class ZkDevice : IAttendanceDevice
 
     public static string[] FingerNames => DeviceDrivers.FingerNames;
 
-    public Task ConnectAsync(DeviceProfile p) => _worker.Run(() =>
+    public Task<DeviceProfile> ConnectAsync(DeviceProfile p, IProgress<string>? progress = null, bool autoDetect = true) => _worker.Run(() =>
     {
         _zk ??= CreateSdk();
-        if (IsConnected) _zk.Disconnect();
-        _machine = p.MachineNumber;
-        if (p.CommPassword != 0) _zk.SetCommPassword(p.CommPassword);
+        if (IsConnected) { try { _zk.Disconnect(); } catch { } IsConnected = false; }
 
-        bool ok = p.Kind switch
+        if (TryConnect(p)) return Connected(p);
+        int firstError = LastError();
+        if (!autoDetect)
+            throw new DeviceException($"Device connect nahi hua ({Describe(p)}). {ErrorText(firstError)}");
+        if (p.Kind is not (ConnectionKind.Usb or ConnectionKind.Serial))
+            throw new DeviceException($"Device connect nahi hua ({p.Kind}). {ErrorText(firstError)}\n" +
+                "Check: IP address, port, network cable, Comm Key (password) aur Machine No.");
+
+        // The mini-USB port shows up either as a ZKTeco USB-client device or as a virtual COM port, depending on the
+        // PC driver, and the device baud rate may differ from the saved one. Try every combination before giving up.
+        progress?.Report("Auto detecting USB / COM port...");
+        foreach (var c in Candidates(p))
         {
-            ConnectionKind.Usb => _zk.Connect_USB(_machine),
-            ConnectionKind.Serial => _zk.Connect_Com(ParseComPort(p.ComPort), _machine, p.BaudRate),
-            ConnectionKind.Tcp => _zk.Connect_Net(p.IpAddress, p.TcpPort),
-            _ => throw new DeviceException($"{p.Kind} ZKTeco SDK driver se connect nahi hota."),
-        };
-        if (!ok)
-            throw new DeviceException($"Device connect nahi hua ({p.Kind}). Error code: {LastError()}. " +
-                "Check: USB cable, device ON, COM/USB driver, Comm Key (password) aur Machine No.");
+            progress?.Report($"Trying {Describe(c)}...");
+            if (!TryConnect(c)) continue;
+            progress?.Report($"Device found on {Describe(c)}");
+            return Connected(c);
+        }
+        throw new DeviceException(NotFoundMessage(p, firstError));
+    });
+
+    private bool TryConnect(DeviceProfile p)
+    {
+        try { _zk!.SetCommPassword(p.CommPassword); } catch { }
+        try
+        {
+            return p.Kind switch
+            {
+                ConnectionKind.Usb => _zk!.Connect_USB(p.MachineNumber),
+                ConnectionKind.Serial => _zk!.Connect_Com(ParseComPort(p.ComPort), p.MachineNumber, p.BaudRate),
+                ConnectionKind.Tcp => _zk!.Connect_Net(p.IpAddress, p.TcpPort),
+                _ => throw new DeviceException($"{p.Kind} ZKTeco SDK driver se connect nahi hota."),
+            };
+        }
+        catch (DeviceException) { throw; }
+        catch { return false; } // older SDK builds lack some Connect_* methods
+    }
+
+    private DeviceProfile Connected(DeviceProfile p)
+    {
         IsConnected = true;
         Profile = p;
+        _machine = p.MachineNumber;
         _ssr = null;
-    });
+        _tmpApi = null;
+        return p;
+    }
+
+    /// <summary>USB with the saved and the default machine no., then every COM port × common baud rates.</summary>
+    private static IEnumerable<DeviceProfile> Candidates(DeviceProfile p)
+    {
+        int[] machines = new[] { p.MachineNumber, 1 }.Distinct().ToArray();
+        var list = new List<DeviceProfile>();
+        foreach (int m in machines) list.Add(With(p, ConnectionKind.Usb, m, p.ComPort, p.BaudRate));
+        foreach (var port in DeviceDrivers.ComPorts())
+            foreach (int baud in new[] { p.BaudRate, 115200, 38400, 57600, 19200, 9600 }.Distinct())
+                foreach (int m in machines)
+                    list.Add(With(p, ConnectionKind.Serial, m, port, baud));
+        var tried = new HashSet<string> { Describe(p) };
+        return list.Where(c => tried.Add(Describe(c)));
+    }
+
+    private static DeviceProfile With(DeviceProfile p, ConnectionKind kind, int machine, string port, int baud) => new()
+    {
+        Id = p.Id, Name = p.Name, Kind = kind, MachineNumber = machine, ComPort = port, BaudRate = baud,
+        IpAddress = p.IpAddress, TcpPort = p.TcpPort, CommPassword = p.CommPassword, SerialNumber = p.SerialNumber,
+    };
+
+    private static string Describe(DeviceProfile p) => p.Kind switch
+    {
+        ConnectionKind.Usb => $"USB (Machine No. {p.MachineNumber})",
+        ConnectionKind.Serial => $"{p.ComPort} @ {p.BaudRate} (Machine No. {p.MachineNumber})",
+        _ => $"{p.IpAddress}:{p.TcpPort}",
+    };
+
+    private static string NotFoundMessage(DeviceProfile p, int error)
+    {
+        var ports = DeviceDrivers.ComPorts();
+        return $"Device USB / COM port par nahi mila. {ErrorText(error)}\n\n" +
+               "1. Mini-USB cable device aur PC dono me poori lagi ho aur data wali cable ho (sirf charging wali nahi). Device ON ho.\n" +
+               "2. Device Manager kholkar cable nikaal ke dobara lagayein: 'Ports (COM & LPT)' me naya COM port ya 'ZKTeco USB' " +
+               "device aana chahiye. Kuch na aaye to doosri cable / PC ka doosra USB port try karein; yellow ! aaye to driver " +
+               "install karein (ZKTeco USB Client driver, CP210x ya CH340).\n" +
+               $"3. Device menu → Comm: Device ID = {p.MachineNumber} (software ka Machine No.) aur Comm Key = {p.CommPassword} hona chahiye.\n" +
+               $"4. Is PC par COM ports: {(ports.Length == 0 ? "koi nahi" : string.Join(", ", ports))}.";
+    }
 
     public Task DisconnectAsync() => _worker.Run(() =>
     {
@@ -74,9 +145,8 @@ public sealed class ZkDevice : IAttendanceDevice
         IsConnected = false;
     });
 
-    public Task<DeviceInfo> GetInfoAsync() => _worker.Run(() =>
+    public Task<DeviceInfo> GetInfoAsync() => Op(() =>
     {
-        EnsureConnected();
         string serial = "", firmware = "", platform = "", product = "";
         try { _zk!.GetSerialNumber(_machine, ref serial); } catch { }
         try { _zk!.GetFirmwareVersion(_machine, ref firmware); } catch { }
@@ -84,10 +154,14 @@ public sealed class ZkDevice : IAttendanceDevice
         try { _zk!.GetProductCode(_machine, ref product); } catch { }
         if (string.IsNullOrWhiteSpace(product))
             try { _zk!.GetSysOption(_machine, "~DeviceName", ref product); } catch { }
-        return new DeviceInfo(serial, firmware, platform, product.Trim(), Status(2), Status(1), Status(3), Status(21), Status(4), Status(6), ReadTime());
+        return new DeviceInfo(serial, firmware, platform, product.Trim(), Status(2), Status(1), Status(3), Status(21), Status(4), Status(6), ReadTime(),
+            Status(8), Status(7), Status(9));
     });
 
-    /// <summary>GetDeviceStatus codes: 1 admins, 2 users, 3 fingerprints, 4 passwords, 6 attendance logs, 21 faces.</summary>
+    /// <summary>
+    /// GetDeviceStatus codes: 1 admins, 2 users, 3 fingerprints, 4 passwords, 6 attendance logs, 21 faces;
+    /// capacities: 7 fingerprints, 8 users, 9 attendance logs.
+    /// </summary>
     private int Status(int code)
     {
         int value = 0;
@@ -95,17 +169,15 @@ public sealed class ZkDevice : IAttendanceDevice
         return value;
     }
 
-    public Task<DateTime?> GetTimeAsync() => _worker.Run(() => { EnsureConnected(); return ReadTime(); });
+    public Task<DateTime?> GetTimeAsync() => Op(ReadTime);
 
-    public Task SyncTimeAsync() => _worker.Run(() =>
+    public Task SyncTimeAsync() => Op(() =>
     {
-        EnsureConnected();
         if (!_zk!.SetDeviceTime(_machine)) throw Fail("Time sync failed");
     });
 
-    public Task<List<DevicePunch>> ReadLogsAsync() => _worker.Run(() =>
+    public Task<List<DevicePunch>> ReadLogsAsync() => Op(() =>
     {
-        EnsureConnected();
         var list = new List<DevicePunch>();
         Locked(() =>
         {
@@ -113,7 +185,7 @@ public sealed class ZkDevice : IAttendanceDevice
             {
                 int err = LastError();
                 if (err == 0 || err == -100) return; // no records
-                throw new DeviceException($"Attendance read failed. Error code: {err}");
+                throw new DeviceException($"Attendance read failed. {ErrorText(err)}");
             }
 
             if (_ssr != false)
@@ -137,9 +209,8 @@ public sealed class ZkDevice : IAttendanceDevice
         return list;
     });
 
-    public Task<List<DeviceUser>> ReadUsersAsync(bool withFingerprints, IProgress<string>? progress = null) => _worker.Run(() =>
+    public Task<List<DeviceUser>> ReadUsersAsync(bool withFingerprints, IProgress<string>? progress = null) => Op(() =>
     {
-        EnsureConnected();
         var users = new List<DeviceUser>();
         Locked(() =>
         {
@@ -172,21 +243,14 @@ public sealed class ZkDevice : IAttendanceDevice
             {
                 progress?.Report($"Fingerprints: {++n}/{users.Count} ({u.EnrollNo})");
                 for (int f = 0; f < 10; f++)
-                {
-                    string tmp = ""; int flag = 0, len = 0;
-                    bool got;
-                    try { got = _zk.GetUserTmpExStr(_machine, u.EnrollNo, f, ref flag, ref tmp, ref len); }
-                    catch { got = _zk.SSR_GetUserTmpStr(_machine, u.EnrollNo, f, ref tmp, ref len); flag = 1; }
-                    if (got && !string.IsNullOrEmpty(tmp)) u.Fingers.Add(new DeviceFinger(f, flag, tmp));
-                }
+                    if (ReadFinger(u.EnrollNo, f) is { } finger) u.Fingers.Add(finger);
             }
         });
         return users;
     });
 
-    public Task UploadUsersAsync(IEnumerable<DeviceUser> users, IProgress<string>? progress = null) => _worker.Run(() =>
+    public Task UploadUsersAsync(IEnumerable<DeviceUser> users, IProgress<string>? progress = null) => Op(() =>
     {
-        EnsureConnected();
         var list = users.ToList();
         Locked(() =>
         {
@@ -201,20 +265,15 @@ public sealed class ZkDevice : IAttendanceDevice
                 if (!ok) throw Fail($"User {u.EnrollNo} upload failed");
 
                 foreach (var f in u.Fingers)
-                {
-                    bool fok;
-                    try { fok = _zk.SetUserTmpExStr(_machine, u.EnrollNo, f.FingerIndex, f.Flag, f.Template); }
-                    catch { fok = _zk.SSR_SetUserTmpStr(_machine, u.EnrollNo, f.FingerIndex, f.Template); }
-                    if (!fok) progress?.Report($"  Finger {f.FingerIndex} of {u.EnrollNo} rejected (template format mismatch?)");
-                }
+                    if (!WriteFinger(u.EnrollNo, f))
+                        progress?.Report($"  Finger {f.FingerIndex} of {u.EnrollNo} rejected (template format mismatch?)");
             }
         });
         _zk!.RefreshData(_machine);
     });
 
-    public Task DeleteUserAsync(string enrollNo) => _worker.Run(() =>
+    public Task DeleteUserAsync(string enrollNo) => Op(() =>
     {
-        EnsureConnected();
         Locked(() =>
         {
             bool ok = _ssr == false && int.TryParse(enrollNo, out int id)
@@ -226,21 +285,22 @@ public sealed class ZkDevice : IAttendanceDevice
     });
 
     /// <summary>Puts the device in enroll mode for a user/finger. Supported on firmware with remote enroll.</summary>
-    public Task StartEnrollAsync(string enrollNo, int fingerIndex) => _worker.Run(() =>
+    public Task StartEnrollAsync(string enrollNo, int fingerIndex) => Op(() =>
     {
-        EnsureConnected();
         try { _zk!.CancelOperation(); } catch { }
         try { _zk!.SSR_DelUserTmpExt(_machine, enrollNo, fingerIndex); } catch { }
         bool ok;
         try { ok = _zk!.StartEnrollEx(enrollNo, fingerIndex, 1); }
         catch { ok = int.TryParse(enrollNo, out int id) && _zk!.StartEnroll(id, fingerIndex); }
-        if (!ok) throw Fail("Remote enroll is device par support nahi hai. Device par hi finger enroll karke 'Download Users' karein");
+        if (!ok)
+            throw new DeviceException("Yeh device software se enroll mode support nahi karta (LX50 jaise models).\n\n" +
+                $"Device par enroll karein: Menu → User Mgt → New User / Edit → AC No {enrollNo} → Fingerprint → finger 3 baar lagayein.\n" +
+                "Uske baad 'Download user info and Fp' dabayein (auto-sync ON ho to kuch minute me apne aap aa jaayega).");
         try { _zk!.StartIdentify(); } catch { }
     });
 
-    public Task ClearLogsAsync() => _worker.Run(() =>
+    public Task ClearLogsAsync() => Op(() =>
     {
-        EnsureConnected();
         Locked(() => { if (!_zk!.ClearGLog(_machine)) throw Fail("Clear logs failed"); });
         _zk!.RefreshData(_machine);
     });
@@ -253,6 +313,103 @@ public sealed class ZkDevice : IAttendanceDevice
     });
 
     // ---------- helpers (run on the STA thread) ----------
+
+    /// <summary>
+    /// Runs a device operation on the STA thread. If it fails because the link dropped (USB cable moved, device went to
+    /// sleep), reconnects once with the same settings and retries.
+    /// </summary>
+    private Task<T> Op<T>(Func<T> op) => _worker.Run(() =>
+    {
+        EnsureConnected();
+        try { return op(); }
+        catch
+        {
+            if (Profile == null || Alive()) throw;
+            IsConnected = false;
+            try { _zk!.Disconnect(); } catch { }
+            if (!TryConnect(Profile))
+                throw new DeviceException("Device se connection toot gaya aur dobara connect nahi hua. " +
+                                          "USB cable aur device power check karke Connect karein.");
+            IsConnected = true;
+            return op();
+        }
+    });
+
+    private Task Op(Action op) => Op(() => { op(); return true; });
+
+    private bool Alive()
+    {
+        int y = 0, mo = 0, d = 0, h = 0, mi = 0, s = 0;
+        try { return _zk!.GetDeviceTime(_machine, ref y, ref mo, ref d, ref h, ref mi, ref s); }
+        catch { return false; }
+    }
+
+    /// <summary>Template API this firmware answers to: 0 = *TmpExStr, 1 = SSR_*TmpStr, 2 = legacy integer IDs (old B&amp;W).</summary>
+    private int? _tmpApi;
+
+    /// <summary>The legacy integer API hangs on SSR/TFT firmware (seen on LX50 6.60), so only B&amp;W firmware tries it.</summary>
+    private int LastTmpApi => _ssr == false ? 2 : 1;
+
+    private DeviceFinger? ReadFinger(string enrollNo, int finger)
+    {
+        for (int api = _tmpApi ?? 0; api <= (_tmpApi ?? LastTmpApi); api++)
+        {
+            string tmp = ""; int flag = 1, len = 0;
+            bool got = false;
+            try
+            {
+                got = api switch
+                {
+                    0 => _zk!.GetUserTmpExStr(_machine, enrollNo, finger, ref flag, ref tmp, ref len),
+                    1 => _zk!.SSR_GetUserTmpStr(_machine, enrollNo, finger, ref tmp, ref len),
+                    _ => int.TryParse(enrollNo, out int id) && _zk!.GetUserTmpStr(_machine, id, finger, ref tmp, ref len),
+                };
+            }
+            catch { }
+            if (!got || string.IsNullOrEmpty(tmp)) continue;
+            _tmpApi = api;
+            return new DeviceFinger(finger, api == 0 ? flag : 1, tmp);
+        }
+        return null;
+    }
+
+    private bool WriteFinger(string enrollNo, DeviceFinger f)
+    {
+        for (int api = _tmpApi ?? 0; api <= (_tmpApi ?? LastTmpApi); api++)
+        {
+            bool ok = false;
+            try
+            {
+                ok = api switch
+                {
+                    0 => _zk!.SetUserTmpExStr(_machine, enrollNo, f.FingerIndex, f.Flag, f.Template),
+                    1 => _zk!.SSR_SetUserTmpStr(_machine, enrollNo, f.FingerIndex, f.Template),
+                    _ => int.TryParse(enrollNo, out int id) && _zk!.SetUserTmpStr(_machine, id, f.FingerIndex, f.Template),
+                };
+            }
+            catch { }
+            if (!ok) continue;
+            _tmpApi = api;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>zkemkeeper GetLastError codes (Standalone SDK manual).</summary>
+    private static string ErrorText(int code) => code switch
+    {
+        -1 => "Error -1: SDK initialise nahi hua / connection nahi bana.",
+        -2 => "Error -2: device se data padhne/likhne me error (cable ya port).",
+        -3 => "Error -3: galat data size.",
+        -4 => "Error -4: device me jagah nahi hai.",
+        -5 => "Error -5: data pehle se maujood hai.",
+        -10 => "Error -10: data length galat aayi.",
+        -100 => "Error -100: device ne operation support nahi kiya ya data nahi hai.",
+        0 => "Error 0: data nahi mila / device ne jawab nahi diya.",
+        4 => "Error 4: galat parameter.",
+        101 => "Error 101: buffer allocate nahi hua.",
+        _ => $"Error code: {code}.",
+    };
 
     private static dynamic CreateSdk()
     {
@@ -297,7 +454,7 @@ public sealed class ZkDevice : IAttendanceDevice
         return code;
     }
 
-    private DeviceException Fail(string msg) => new($"{msg}. Error code: {LastError()}");
+    private DeviceException Fail(string msg) => new($"{msg}. {ErrorText(LastError())}");
 
     private static DateTime SafeDate(int y, int mo, int d, int h, int mi, int s)
     {

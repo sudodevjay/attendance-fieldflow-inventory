@@ -13,7 +13,9 @@ public enum ReportKind
     EarlyDeparture,
     Overtime,
     Absent,
-    PunchLog
+    PunchLog,
+    SalarySheet,
+    LeaveBalance
 }
 
 public class ReportResult
@@ -38,12 +40,16 @@ public static class ReportService
         (ReportKind.Overtime, "Overtime Report", false),
         (ReportKind.Absent, "Absent Report", false),
         (ReportKind.PunchLog, "Punch Log (All Punches)", false),
+        (ReportKind.SalarySheet, "Salary Sheet (Monthly Pay)", true),
+        (ReportKind.LeaveBalance, "Leave Balance (Yearly)", false),
     ];
 
     public static ReportResult Build(ReportKind kind, DateTime from, DateTime to, int? departmentId, int? employeeId)
     {
+        if (kind == ReportKind.LeaveBalance)
+            return PayrollService.LeaveBalance(Catalog.First(c => c.Kind == kind).Name, from.Year, departmentId, employeeId);
         if (kind == ReportKind.DailyAttendance) to = from;
-        if (kind is ReportKind.MonthlyMuster or ReportKind.MonthlySummary)
+        if (kind is ReportKind.MonthlyMuster or ReportKind.MonthlySummary or ReportKind.SalarySheet)
         {
             from = new DateTime(from.Year, from.Month, 1);
             to = from.AddMonths(1).AddDays(-1);
@@ -54,7 +60,7 @@ public static class ReportService
         var period = kind switch
         {
             ReportKind.DailyAttendance => from.ToString("dddd, dd MMM yyyy"),
-            ReportKind.MonthlyMuster or ReportKind.MonthlySummary => from.ToString("MMMM yyyy"),
+            ReportKind.MonthlyMuster or ReportKind.MonthlySummary or ReportKind.SalarySheet => from.ToString("MMMM yyyy"),
             _ => $"{from:dd MMM yyyy} to {to:dd MMM yyyy}"
         };
 
@@ -68,6 +74,7 @@ public static class ReportService
             ReportKind.EarlyDeparture => Daily(name, period, days.Where(d => d.EarlyMinutes > 0), true),
             ReportKind.Overtime => Daily(name, period, days.Where(d => d.OvertimeMinutes > 0), true),
             ReportKind.Absent => Daily(name, period, days.Where(d => d.Status == DayStatus.Absent), true),
+            ReportKind.SalarySheet => PayrollService.SalarySheet(name, period, from, days),
             _ => Punches(name, period, days),
         };
     }

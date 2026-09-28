@@ -18,7 +18,7 @@ public sealed class AdmsDevice : IAttendanceDevice
     private string Sn => _profile?.SerialNumber ?? "";
     public bool IsConnected => _profile != null && AdmsServer.IsOnline(Sn);
 
-    public async Task ConnectAsync(DeviceProfile p)
+    public async Task<DeviceProfile> ConnectAsync(DeviceProfile p, IProgress<string>? progress = null, bool autoDetect = true)
     {
         if (string.IsNullOrWhiteSpace(p.SerialNumber))
             throw new DeviceException("ADMS device ke liye Serial Number zaroori hai (device menu → System Info → Serial No.).");
@@ -31,6 +31,7 @@ public sealed class AdmsDevice : IAttendanceDevice
             throw new DeviceException($"Device {p.SerialNumber} ne abhi tak server se contact nahi kiya.\n\n" +
                 $"Device menu → Comm → Cloud Server Setting me Server Address = is PC ka IP, Port = {AdmsServer.Port} set karein " +
                 "aur Windows Firewall me yeh port allow karein.");
+        return p;
     }
 
     public Task DisconnectAsync()

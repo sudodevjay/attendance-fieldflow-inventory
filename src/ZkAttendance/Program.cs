@@ -40,7 +40,8 @@ internal static class Program
         if (!AdminDialog.Login()) return;
 
         var form = new MainForm();
-        if (AppDbContext.GetSetting("AutoDownload") == "1")
+        // Auto-sync downloads on start by itself; this older option only matters when auto-sync is off.
+        if (AppDbContext.GetSetting("AutoDownload") == "1" && AutoSync.Minutes == 0)
             form.Shown += async (_, _) =>
             {
                 foreach (var p in DeviceActions.All())

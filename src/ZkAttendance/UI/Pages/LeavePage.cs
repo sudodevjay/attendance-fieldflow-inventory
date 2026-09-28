@@ -11,6 +11,7 @@ public class LeavePage : PageBase
     private readonly DataGridView _leaves = Ui.Grid();
     private readonly DataGridView _holidays = Ui.Grid();
     private readonly DataGridView _types = Ui.Grid();
+    private readonly DataGridView _balance = Ui.Grid();
     private readonly NumericUpDown _year = new() { Minimum = 2000, Maximum = 2100, Width = 80, Margin = new Padding(0, 4, 8, 0) };
 
     public LeavePage()
@@ -24,6 +25,8 @@ public class LeavePage : PageBase
         tabs.TabPages.Add(Tab("Leave Entries", _leaves,
             Ui.Button("＋ Add Leave", (_, _) => AddLeave(), ButtonStyle.Primary),
             Ui.Button("🗑 Delete", (_, _) => DeleteRows(_leaves, (db, ids) => db.LeaveEntries.Where(l => ids.Contains(l.Id)).ExecuteDelete()), ButtonStyle.Danger)));
+        tabs.TabPages.Add(Tab("Leave Balance", _balance,
+            Ui.Button("⤓ Excel", (_, _) => ExportBalance(), ButtonStyle.Success)));
         tabs.TabPages.Add(Tab("Holidays", _holidays,
             Ui.Button("＋ Add Holiday", (_, _) => EditHoliday(null), ButtonStyle.Primary),
             Ui.Button("✎ Edit", (_, _) => EditHoliday(Ui.SelectedId(_holidays))),
@@ -66,9 +69,11 @@ public class LeavePage : PageBase
                 ("Id", h => h.Id), ("Date", h => h.Date.ToString("dd-MM-yyyy")), ("Day", h => h.Date.DayOfWeek.ToString()), ("Holiday", h => h.Name));
 
             _types.DataSource = Ui.ToTable(db.LeaveTypes.AsNoTracking().OrderBy(t => t.Code).ToList(),
-                ("Id", t => t.Id), ("Code", t => t.Code), ("Name", t => t.Name), ("Paid", t => t.IsPaid ? "Yes" : "No"));
+                ("Id", t => t.Id), ("Code", t => t.Code), ("Name", t => t.Name), ("Paid", t => t.IsPaid ? "Yes" : "No"),
+                ("Quota / Year", t => t.YearlyQuota > 0 ? t.YearlyQuota.ToString("0.#") : "No limit"));
 
             foreach (var g in new[] { _leaves, _holidays, _types }) g.Columns["Id"]!.Visible = false;
+            _balance.DataSource = PayrollService.LeaveBalance("Leave Balance", y, null, null).Table;
         }
         catch (Exception ex) { Ui.Error(ex); }
     }
@@ -96,14 +101,37 @@ public class LeavePage : PageBase
             };
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
-            db.LeaveEntries.Add(new LeaveEntry
+            var entry = new LeaveEntry
             {
                 EmployeeId = ((Employee)emp.SelectedItem!).Id, LeaveTypeId = ((LeaveType)type.SelectedItem!).Id,
                 FromDate = from.Value.Date, ToDate = to.Value.Date, IsHalfDay = half.Checked, Reason = reason.Text.Trim()
-            });
+            };
+            if (!ConfirmQuota(entry, (LeaveType)type.SelectedItem!)) return;
+            db.LeaveEntries.Add(entry);
             db.SaveChanges();
             LoadData();
         }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+
+    /// <summary>Warns when the new leave goes beyond the yearly quota (the extra days become unpaid).</summary>
+    private bool ConfirmQuota(LeaveEntry entry, LeaveType type)
+    {
+        if (!type.IsPaid || type.YearlyQuota <= 0) return true;
+        double days = PayrollService.DaysFor(entry);
+        if (entry.FromDate.Year != entry.ToDate.Year) return true;
+        var (quota, taken) = PayrollService.Balance(entry.EmployeeId, type.Id, entry.FromDate.Year);
+        double left = Math.Max(0, quota - taken);
+        if (days <= left) return true;
+        return Ui.Confirm($"{type.Code} balance: {left:0.#} din (quota {quota:0.#}, pehle li {taken:0.#}).\n" +
+                          $"Is leave ke {days:0.#} din me se {days - left:0.#} din bina paise (LWP) maane jaayenge.\n\nPhir bhi save karein?");
+    }
+
+    private void ExportBalance()
+    {
+        var path = Ui.SaveFile("Excel (*.xlsx)|*.xlsx", $"Leave_Balance_{(int)_year.Value}.xlsx");
+        if (path == null) return;
+        try { ExcelExporter.Export(PayrollService.LeaveBalance("Leave Balance", (int)_year.Value, null, null), path); Ui.Info("Saved: " + path); }
         catch (Exception ex) { Ui.Error(ex); }
     }
 
@@ -142,11 +170,16 @@ public class LeavePage : PageBase
             var code = dlg.AddText("Code * (e.g. CL)", t.Code);
             var name = dlg.AddText("Name *", t.Name);
             var paid = dlg.AddCheck("Paid", t.IsPaid, "Paid leave (Paid Days me count hogi)");
+            var quota = dlg.AddNumber("Yearly quota (din, 0 = no limit)", (decimal)t.YearlyQuota, 0, 366);
+            quota.DecimalPlaces = 1;
+            quota.Increment = 0.5m;
+            dlg.AddNote("Quota khatam hone ke baad is type ki leave apne aap bina paise (LWP) gini jaayegi.");
             dlg.Validator = () => string.IsNullOrWhiteSpace(code.Text) || string.IsNullOrWhiteSpace(name.Text) ? "Code aur Name zaroori hain." : null;
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
             t.Code = code.Text.Trim().ToUpperInvariant();
             t.Name = name.Text.Trim();
             t.IsPaid = paid.Checked;
+            t.YearlyQuota = (double)quota.Value;
             if (id == null) db.LeaveTypes.Add(t);
             db.SaveChanges();
             LoadData();

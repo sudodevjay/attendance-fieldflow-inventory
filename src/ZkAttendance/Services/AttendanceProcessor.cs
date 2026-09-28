@@ -34,6 +34,8 @@ public class DayRecord
     public bool IsLeave { get; set; }
     public bool IsPaidLeave { get; set; }
     public double LeaveDays { get; set; }
+    /// <summary>Part of <see cref="LeaveDays"/> that is paid (less than it when the yearly quota ran out).</summary>
+    public double PaidLeaveDays { get; set; }
     public string Remark { get; set; } = "";
 
     /// <summary>Attendance value used in payroll: 1 present, 0.5 half day.</summary>
@@ -47,6 +49,7 @@ public class DayRecord
 
 public class MonthlySummary
 {
+    public int EmployeeId { get; init; }
     public string EnrollNo { get; init; } = "";
     public string Name { get; init; } = "";
     public string Department { get; init; } = "";
@@ -108,10 +111,14 @@ public static class AttendanceProcessor
             .GroupBy(a => a.EnrollNo)
             .ToDictionary(g => g.Key, g => g.Select(x => x.PunchTime).OrderBy(t => t).ToList());
 
+        // Leave quotas are per calendar year, so leave taken earlier in the year is needed too.
+        var yearStart = new DateTime(from.Year, 1, 1);
         var holidays = db.Holidays.Where(h => h.Date >= from && h.Date <= to).ToDictionary(h => h.Date.Date, h => h.Name);
+        var quotaHolidays = db.Holidays.Where(h => h.Date >= yearStart && h.Date <= to).Select(h => h.Date).AsEnumerable()
+                              .Select(d => d.Date).ToHashSet();
         var empIds = employees.Select(e => e.Id).ToList();
         var leaves = db.LeaveEntries.Include(l => l.LeaveType)
-            .Where(l => empIds.Contains(l.EmployeeId) && l.FromDate <= to && l.ToDate >= from)
+            .Where(l => empIds.Contains(l.EmployeeId) && l.FromDate <= to && l.ToDate >= yearStart)
             .ToList();
 
         var result = new List<DayRecord>();
@@ -122,6 +129,16 @@ public static class AttendanceProcessor
             var shift = emp.Shift ?? FallbackShift;
             logs.TryGetValue(emp.EnrollNo, out var empLogs);
             empLogs ??= new List<DateTime>();
+
+            // Days of quota-limited leave, to know how much quota is left on a given date.
+            var quotaUse = leaves.Where(l => l.EmployeeId == emp.Id && (l.LeaveType?.YearlyQuota ?? 0) > 0)
+                .SelectMany(l => LeaveDays(l, shift, quotaHolidays).Select(x => (l.LeaveTypeId, x.Date, x.Days))).ToList();
+            double QuotaLeft(LeaveEntry l, DateTime day)
+            {
+                double quota = l.LeaveType?.YearlyQuota ?? 0;
+                if (quota <= 0) return double.MaxValue;
+                return quota - quotaUse.Where(u => u.LeaveTypeId == l.LeaveTypeId && u.Date.Year == day.Year && u.Date < day).Sum(u => u.Days);
+            }
 
             for (var d = from; d <= to; d = d.AddDays(1))
             {
@@ -188,7 +205,7 @@ public static class AttendanceProcessor
                             if (leave.IsHalfDay)
                             {
                                 rec.Status = DayStatus.HalfDay;
-                                ApplyLeave(rec, leave, 0.5, keepStatus: true);
+                                ApplyLeave(rec, leave, 0.5, keepStatus: true, QuotaLeft(leave, d));
                             }
                             else rec.Remark = Join(rec.Remark, $"Punched during {leave.LeaveType?.Code} leave");
                         }
@@ -197,7 +214,7 @@ public static class AttendanceProcessor
                 else if (d > today) rec.Status = "";
                 else if (holiday) { rec.Status = DayStatus.Holiday; rec.Remark = holidayName ?? ""; }
                 else if (weeklyOff) rec.Status = DayStatus.WeeklyOff;
-                else if (leave != null) ApplyLeave(rec, leave, leave.IsHalfDay ? 0.5 : 1, keepStatus: false);
+                else if (leave != null) ApplyLeave(rec, leave, leave.IsHalfDay ? 0.5 : 1, keepStatus: false, QuotaLeft(leave, d));
                 else rec.Status = DayStatus.Absent;
             }
         }
@@ -208,7 +225,7 @@ public static class AttendanceProcessor
         days.GroupBy(d => d.EmployeeId).Select(g =>
         {
             var f = g.First();
-            var s = new MonthlySummary { EnrollNo = f.EnrollNo, Name = f.Name, Department = f.Department };
+            var s = new MonthlySummary { EmployeeId = f.EmployeeId, EnrollNo = f.EnrollNo, Name = f.Name, Department = f.Department };
             foreach (var d in g)
             {
                 s.Present += d.PresentValue;
@@ -216,7 +233,7 @@ public static class AttendanceProcessor
                 if (d.IsLeave)
                 {
                     s.Leave += d.LeaveDays;
-                    if (d.IsPaidLeave) s.PaidLeave += d.LeaveDays;
+                    s.PaidLeave += d.PaidLeaveDays;
                     // Half-day leave with no punches: the other half is absent.
                     if (d.LeaveDays < 1 && d.Status != DayStatus.HalfDay) s.Absent += 1 - d.LeaveDays;
                 }
@@ -239,14 +256,28 @@ public static class AttendanceProcessor
         return list;
     }
 
-    private static void ApplyLeave(DayRecord rec, LeaveEntry leave, double days, bool keepStatus)
+    private static void ApplyLeave(DayRecord rec, LeaveEntry leave, double days, bool keepStatus, double quotaLeft)
     {
         rec.IsLeave = true;
         rec.LeaveDays = days;
-        rec.IsPaidLeave = leave.LeaveType?.IsPaid ?? true;
+        bool paid = leave.LeaveType?.IsPaid ?? true;
+        rec.PaidLeaveDays = paid ? Math.Clamp(quotaLeft, 0, days) : 0;
+        rec.IsPaidLeave = rec.PaidLeaveDays > 0;
         var code = leave.LeaveType?.Code ?? "L";
-        if (!keepStatus) rec.Status = days < 1 ? $"½{code}" : code;
-        rec.Remark = Join(rec.Remark, days < 1 ? $"Half day {code}" : leave.Reason ?? "");
+        bool overQuota = paid && rec.PaidLeaveDays < days;
+        var shown = overQuota && rec.PaidLeaveDays == 0 ? "LWP" : code;
+        if (!keepStatus) rec.Status = days < 1 ? $"½{shown}" : shown;
+        rec.Remark = Join(rec.Remark,
+            overQuota ? $"{code} quota khatam: {days - rec.PaidLeaveDays:0.#} din bina paise (LWP)" :
+            days < 1 ? $"Half day {code}" : leave.Reason ?? "");
+    }
+
+    /// <summary>Working days a leave covers: the employee's weekly offs and holidays inside it are not counted.</summary>
+    public static IEnumerable<(DateTime Date, double Days)> LeaveDays(LeaveEntry leave, Shift? shift, ISet<DateTime> holidays)
+    {
+        var s = shift ?? FallbackShift;
+        for (var d = leave.FromDate.Date; d <= leave.ToDate.Date; d = d.AddDays(1))
+            if (!holidays.Contains(d) && !s.IsWeeklyOff(d.DayOfWeek)) yield return (d, leave.IsHalfDay ? 0.5 : 1);
     }
 
     private static string Join(string a, string b) => string.IsNullOrEmpty(a) ? b : string.IsNullOrEmpty(b) ? a : $"{a}; {b}";

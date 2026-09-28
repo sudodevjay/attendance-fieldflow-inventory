@@ -15,6 +15,7 @@ public class SettingsPage : PageBase
     private readonly CheckBox _admsEnabled = new() { Text = "ADMS (Push / Cloud) server chalayein - naye ZKTeco devices khud is PC par attendance bhejenge", AutoSize = true };
     private readonly NumericUpDown _admsPort = new() { Minimum = 1, Maximum = 65535, Value = 8081, Width = 90 };
     private readonly CheckBox _autoDownload = new() { Text = "App start hone par device se attendance auto-download karein", AutoSize = true };
+    private readonly NumericUpDown _syncMinutes = new() { Minimum = 0, Maximum = 1440, Value = AutoSync.DefaultMinutes, Width = 70 };
 
     public SettingsPage()
     {
@@ -26,6 +27,11 @@ public class SettingsPage : PageBase
         f.Controls.Add(Ui.Label("Address", color: Theme.Muted));
         f.Controls.Add(_address);
         f.Controls.Add(_autoDownload);
+        var syncRow = new FlowLayoutPanel { AutoSize = true };
+        syncRow.Controls.Add(Ui.Label("Auto-sync: har"));
+        syncRow.Controls.Add(_syncMinutes);
+        syncRow.Controls.Add(Ui.Label("minute me device se naye punch / users download karein (0 = band)"));
+        f.Controls.Add(syncRow);
         f.Controls.Add(Ui.Button("Save", (_, _) => SaveCompany(), ButtonStyle.Primary));
 
         f.Controls.Add(new Label { Height = 20 });
@@ -58,6 +64,7 @@ public class SettingsPage : PageBase
         _company.Text = AppDbContext.GetSetting("CompanyName", "My Company");
         _address.Text = AppDbContext.GetSetting("CompanyAddress");
         _autoDownload.Checked = AppDbContext.GetSetting("AutoDownload") == "1";
+        _syncMinutes.Value = AutoSync.Minutes;
         _conn.Text = DbConfig.ConnectionString;
         _admsEnabled.Checked = AdmsHost.Enabled;
         _admsPort.Value = AdmsHost.ConfiguredPort;
@@ -70,6 +77,8 @@ public class SettingsPage : PageBase
             AppDbContext.SetSetting("CompanyName", _company.Text.Trim());
             AppDbContext.SetSetting("CompanyAddress", _address.Text.Trim());
             AppDbContext.SetSetting("AutoDownload", _autoDownload.Checked ? "1" : "0");
+            AppDbContext.SetSetting("AutoSync.Minutes", ((int)_syncMinutes.Value).ToString());
+            AutoSync.Apply();
             Ui.Info("Settings saved.");
         }
         catch (Exception ex) { Ui.Error(ex); }

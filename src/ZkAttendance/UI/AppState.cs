@@ -23,12 +23,16 @@ public static class AppState
     public static event Action<int, string>? Logged;
     public static void Log(int deviceId, string message) => Logged?.Invoke(deviceId, message);
 
-    /// <summary>Driver instance for a device profile; recreated if the connection type changed.</summary>
+    /// <summary>
+    /// Driver instance for a device profile; recreated if the connection type needs another driver. USB, Serial and
+    /// Ethernet share the SDK driver, so a USB → COM switch by auto-detect keeps the live connection.
+    /// </summary>
     public static IAttendanceDevice Device(DeviceProfile p)
     {
         lock (Devices)
         {
-            if (Devices.TryGetValue(p.Id, out var e) && e.kind == p.Kind) return e.device;
+            if (Devices.TryGetValue(p.Id, out var e) && (e.kind == ConnectionKind.Adms) == (p.Kind == ConnectionKind.Adms))
+                return e.device;
             e.device?.Dispose();
             var d = DeviceDrivers.Create(p);
             Devices[p.Id] = (p.Kind, d);
@@ -92,28 +96,55 @@ public static class DeviceActions
                ?? all[0];
     }
 
-    public static async Task Connect(DeviceProfile p)
+    /// <param name="quiet">Background auto-sync: saved settings only (no port scan) and no log lines on failure.</param>
+    public static async Task Connect(DeviceProfile p, bool quiet = false)
     {
         var dev = AppState.Device(p);
         if (dev.IsConnected) return;
-        AppState.Log(p.Id, "Connecting with device.please wait...");
+        if (!quiet) AppState.Log(p.Id, "Connecting with device.please wait...");
+        DeviceProfile used;
         try
         {
-            await dev.ConnectAsync(p);
+            used = await dev.ConnectAsync(p, quiet ? null : new LogProgress(p.Id), autoDetect: !quiet);
         }
         catch (Exception ex)
         {
-            AppState.Log(p.Id, "failed in connecting with device");
+            if (!quiet) AppState.Log(p.Id, "failed in connecting with device");
             AppState.RaiseDeviceStatus();
             throw new DeviceException(ex.Message);
         }
         AppState.Log(p.Id, "Succeed in connecting with device");
+        AutoSync.MarkConnected(p.Id);
+        if (used.Kind != p.Kind || used.MachineNumber != p.MachineNumber || used.ComPort != p.ComPort || used.BaudRate != p.BaudRate)
+            SaveDetected(used);
         AppState.RaiseDeviceStatus();
         try { await RefreshInfo(p.Id); } catch (Exception ex) { AppState.Log(p.Id, "Read info failed: " + ex.Message); }
     }
 
+    /// <summary>Auto-detect found the device on other settings (e.g. USB → COM5 @ 115200); keep them for next time.</summary>
+    private static void SaveDetected(DeviceProfile used)
+    {
+        using var db = new AppDbContext();
+        var p = db.DeviceProfiles.First(x => x.Id == used.Id);
+        p.Kind = used.Kind;
+        p.MachineNumber = used.MachineNumber;
+        p.ComPort = used.ComPort;
+        p.BaudRate = used.BaudRate;
+        db.SaveChanges();
+        AppState.Log(used.Id, used.Kind == ConnectionKind.Serial
+            ? $"Settings saved: Comm type = Serial Port/RS485, {used.ComPort}, {used.BaudRate}, Machine No. {used.MachineNumber}"
+            : $"Settings saved: Comm type = USB, Machine No. {used.MachineNumber}");
+    }
+
+    /// <summary>Sends driver progress lines to the connection log (the log marshals to the UI thread itself).</summary>
+    private sealed class LogProgress(int deviceId) : IProgress<string>
+    {
+        public void Report(string value) => AppState.Log(deviceId, value);
+    }
+
     public static async Task Disconnect(int id)
     {
+        AutoSync.MarkDisconnected(id);
         await AppState.Device(id).DisconnectAsync();
         AppState.Log(id, "Disconnect");
         AppState.RaiseDeviceStatus();
@@ -126,7 +157,7 @@ public static class DeviceActions
     }
 
     /// <summary>Reads serial/product/counters and caches them for the Machine List.</summary>
-    public static async Task RefreshInfo(int id)
+    public static async Task<DeviceInfo> RefreshInfo(int id)
     {
         var info = await AppState.Device(id).GetInfoAsync();
         using var db = new AppDbContext();
@@ -142,6 +173,7 @@ public static class DeviceActions
         p.LogCount = info.LogCount;
         db.SaveChanges();
         AppState.RaiseDeviceStatus();
+        return info;
     }
 
     /// <summary>Downloads punches from the device into the database; returns the punches read.</summary>
@@ -176,14 +208,31 @@ public static class DeviceActions
         return (added, updated, fingers);
     }
 
-    public static async Task UploadUsers(DeviceProfile p, List<int> employeeIds)
+    /// <summary>Uploads employees; returns how many fingerprint templates the device refused.</summary>
+    public static async Task<int> UploadUsers(DeviceProfile p, List<int> employeeIds)
     {
         var dev = await Ensure(p);
         dev.Require(DeviceFeatures.UploadUsers, "Upload user info");
         AppState.Log(p.Id, $"Uploading {employeeIds.Count} user(s) and FP...");
-        await dev.UploadUsersAsync(SyncService.ToDeviceUsers(employeeIds));
-        AppState.Log(p.Id, "Upload user info and FP finished");
+        var rejected = new Collector();
+        await dev.UploadUsersAsync(SyncService.ToDeviceUsers(employeeIds), rejected);
+        AppState.Log(p.Id, rejected.Count == 0 ? "Upload user info and FP finished"
+            : $"Upload user info finished; {rejected.Count} fingerprint(s) device ne accept nahi kiye");
         try { await RefreshInfo(p.Id); } catch { }
+        return rejected.Count;
+    }
+
+    public static string RejectedFingersNote(int rejected) => rejected == 0 ? "" :
+        $"\n\nNaam / password / card device par update ho gaye. {rejected} fingerprint software se nahi bheje ja sake " +
+        "(yeh device is format ko upload nahi karta). Jo finger device par pehle se enrolled hai woh waisi hi hai; " +
+        "nayi finger device par hi enroll karein.";
+
+    /// <summary>Counts the per-finger "rejected" lines the driver reports during upload (reported synchronously on the device thread).</summary>
+    private sealed class Collector : IProgress<string>
+    {
+        private int _count;
+        public int Count => Volatile.Read(ref _count);
+        public void Report(string value) { if (value.Contains("rejected")) Interlocked.Increment(ref _count); }
     }
 }
 

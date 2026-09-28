@@ -85,6 +85,27 @@ public static class AttendanceRuleDialog
     }
 }
 
+/// <summary>Company-wide salary rules used by the Salary Sheet report.</summary>
+public static class PayrollRuleDialog
+{
+    public static void ShowRules(IWin32Window owner)
+    {
+        var r = PayrollRules.Load();
+        using var dlg = new FormDialog("Salary Rule", 440);
+        dlg.AddNote("Monthly salary: ek din ka paisa = Salary ÷ mahine ke din. Pay = ek din × (Paid Days − late cut).\n" +
+                    "Salary aur OT rate har employee ke 'Addition' tab me bharein.");
+        var late = dlg.AddNumber("Kitni baar late = ½ din cut (0 = band)", r.LateCountForHalfDay, 0, 31);
+        var ot = dlg.AddNumber("OT multiplier (OT rate 0 wale employees)", r.OtMultiplier, 0, 5);
+        ot.DecimalPlaces = 2;
+        ot.Increment = 0.5m;
+        dlg.AddNote("Example: late = 3 → mahine me 3 late = ½ din, 6 late = 1 din cut.\n" +
+                    "OT multiplier 1 = ek ghante ka normal paisa, 2 = double. Employee ka apna OT rate ho to wahi lagega.");
+        if (dlg.ShowDialog(owner) != DialogResult.OK) return;
+        new PayrollRules((int)late.Value, ot.Value).Save();
+        AppState.RaiseDataChanged();
+    }
+}
+
 /// <summary>"Employee Schedule": assign a shift (timetable) to many employees at once.</summary>
 public class EmployeeScheduleWindow : Form
 {
