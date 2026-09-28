@@ -581,7 +581,13 @@ public class MainForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (e.CloseReason == CloseReason.UserClosing && !Ui.Confirm("Program band karein?")) { e.Cancel = true; return; }
+        if (e.CloseReason == CloseReason.UserClosing &&
+            MessageBox.Show(this, "Are you sure you want to exit Attendance Management Program?\n\nAuto-sync with the device will stop until you open it again.",
+                "Exit", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+        {
+            e.Cancel = true;
+            return;
+        }
         foreach (var f in _tabs.TabPages.Cast<TabPage>().Select(ScreenTabs.Hosted).OfType<Form>().ToList()) f.Close();
         base.OnFormClosing(e);
     }
