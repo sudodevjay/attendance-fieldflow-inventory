@@ -1,0 +1,29 @@
+[DisabledHintIDs]
+HintId_1=1
+HintId_10=1
+[Options]
+localefile=attcheckin.chs
+EmConnectedEnabled=0
+临时超级用户_RANGE_User=1
+临时超级用户_RANGE_Dept=1
+临时超级用户_RANGE_D1=2009-04-13 00:00:00
+临时超级用户_RANGE_D2=2009-04-20 23:59:59
+MainFormLeft=0
+MainFormTop=0
+MainFormWidth=1280
+MainFormHeight=738
+LeftMenu=194
+RightInfo=300
+MachinesViewHeight=428
+ViewStyle=3
+[TfAttCalc]
+pnlRecOP_Width=166
+pnlAttAbnormite_Width=140
+pnlAudit_Width=166
+pnlCalc_Width=132
+
+
+[dbgAttDay_Layout_1]
+VisibleFields=DeptId;BadgeNumber;SSN;UserName;Duty;RealDuty;Late;Early;Absent;OverTime;Out;BOut;WorkTime;DutyInOut;ClockIn;ClockOut;NoIn;NoOut;Leave_;Leave_0;Leave_1;Leave_2;Leave_3;SSpeDayNormal;SSpeDayWeekend;SSpeDayHoliday;AttTime;SSpeDayNormalOT;SSpeDayWeekendOT;SSpeDayHolidayOT
+InvisibleFields=UserId;Latetotal;Earlytotal;UsedShifts;Sym_12_07_23;A_12_07_23;OverTime_12_07_23;Sym_12_07_24;A_12_07_24;OverTime_12_07_24;Sym_12_07_25;A_12_07_25;OverTime_12_07_25;Sym_12_07_26;A_12_07_26;OverTime_12_07_26;Sch_12_07_23;Sch_12_07_24;Sch_12_07_25;Sch_12_07_26;1;2;SchCount
+FieldsWidth=DeptId:21;UserId:10;BadgeNumber:24;SSN:10;UserName:10;Duty:6;RealDuty:6;Late:6;Early:6;Absent:6;OverTime:6;Out:6;BOut:8;WorkTime:8;DutyInOut:8;ClockIn:6;ClockOut:6;NoIn:6;NoOut:6;Latetotal:6;Earlytotal:6;Leave_:6;Leave_0:6;Leave_1:6;Leave_2:6;Leave_3:6;UsedShifts:8;Sym_12_07_23:2;A_12_07_23:6;OverTime_12_07_23:6;Sym_12_07_24:2;A_12_07_24:6;OverTime_12_07_24:6;Sym_12_07_25:2;A_12_07_25:6;OverTime_12_07_25:6;Sym_12_07_26:2;A_12_07_26:6;OverTime_12_07_26:6;Sch_12_07_23:2;Sch_12_07_24:2;Sch_12_07_25:2;Sch_12_07_26:2;1:8;2:8;SchCount:8;SSpeDayNormal:6;SSpeDayWeekend:6;SSpeDayHoliday:6;AttTime:8;SSpeDayNormalOT:8;SSpeDayWeekendOT:8;SSpeDayHolidayOT:10

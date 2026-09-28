@@ -1,0 +1,12 @@
+[1/2] USB driver install...
+Microsoft PnP Utility
+
+Adding driver package:  ZKFP.inf
+Failed to add driver package: The hash for the file is not present in the specified catalog file. The file is likely corrupt or the victim of tampering.
+
+Total driver packages:  1
+Added driver packages:  0
+[2/2] ZKTeco SDK register...
+SDK registered. 
+
+Ab device ka mini-USB cable ek baar nikaal kar dobara lagayein.

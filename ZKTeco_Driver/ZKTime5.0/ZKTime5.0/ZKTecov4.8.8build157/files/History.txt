@@ -1,0 +1,25 @@
+2007-8-3(zkemkeeper Ver:6.0.1.1)
+1.修改在下载管理时如果是9位码的机器，用户登记号出错BUG。
+2.SSR_GetGeneralLogData函数支持WORKCODE功能。
+
+2007-7-17
+1.在MODEM拨号成功后（commpro），连接设备命令由2000改为9000
+
+2007-7-9
+1.增加MODEM拨号功能
+2.修改BatchUpdate上传8000枚指纹上传超时，假失败BUG。
+
+2007-7-4
+1.修改了zkemsck.dll支持ZEM500_TFT的SMS格式。
+
+2007-6-25
+1.修改了zkemkeeper.dll在特殊情况下，导致上传用户后，出现非法时间段访问BUG。
+
+2007-6-20
+1.修改了zkemkeeper.dll实时事件不支持9位BUG
+
+2007-6-11
+1.修改了在批处理模式上传用户信息后，然后使用EnableUser函数时出错BUG
+
+2007-5-25
+1.add SetSysOption function

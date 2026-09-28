@@ -7,9 +7,5 @@ publish/
 .vs/
 .vscode/
 
-# Reference screenshots of the original ZKTeco software (not part of the source)
-fingerprintdevice/
-fingerprintdevice.zip
-
 # Local backups
 *.bak

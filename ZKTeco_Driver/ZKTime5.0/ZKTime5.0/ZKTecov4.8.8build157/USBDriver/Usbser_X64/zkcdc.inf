@@ -1,0 +1,85 @@
+
+; Windows USB CDC Setup File
+; Copyright (c) 2000 Microsoft Corporation
+
+[Version] 
+Signature="$Windows NT$" 
+Class=Biometric
+ClassGuid={4D36E978-E325-11CE-BFC1-08002BE10318} 
+Provider=%COMPANY% 
+LayoutFile=layout.inf
+DriverVer=27/12/2006,1.0.0.0
+
+[Manufacturer] 
+%MFGNAME% = ManufName,NT,NTia64,NTamd64
+
+[DestinationDirs] 
+DefaultDestDir=12 
+
+[ManufName] 
+%Modem3% = Modem3, USB\VID_1B55&PID_B400
+
+[ManufName.NT] 
+%Modem3% = Modem3.NT, USB\VID_1B55&PID_B400
+
+
+
+[ManufName.NTia64] 
+%Modem3% = Modem3.NTia64, USB\VID_1B55&PID_B400
+
+[ManufName.NTamd64] 
+%Modem3% = Modem3.NTamd64, USB\VID_1B55&PID_B400
+
+
+
+
+
+
+;------------------------------------------------------------------------------
+;  Windows 2000/XP Sections
+;------------------------------------------------------------------------------
+
+
+
+[Modem3.NT]
+;CopyFiles=USBModemCopyFileSection
+AddReg=Modem3.NT.AddReg 
+
+[Modem3.NTamd64]
+;CopyFiles=USBModemCopyFileSection
+AddReg=Modem3.NTamd64.AddReg 
+
+
+
+[USBModemCopyFileSection]
+usbser.sys,,,0x20
+
+[Modem3.NT.AddReg] 
+HKR,,DevLoader,,*ntkern 
+HKR,,NTMPDriver,,usbser.sys 
+HKR,,EnumPropPages32,,"MsPorts.dll,SerialPortPropPageProvider" 
+
+[Modem3.NTamd64.AddReg] 
+HKR,,DevLoader,,*ntkern 
+HKR,,NTMPDriver,,usbser.sys 
+HKR,,EnumPropPages32,,"MsPorts.dll,SerialPortPropPageProvider" 
+
+[Modem3.NTamd64.Services] 
+AddService=usbser, 0x00000002, DriverService
+
+[DriverService] 
+DisplayName=%SERVICE%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%12%\usbser.sys 
+
+;------------------------------------------------------------------------------
+;  String Definitions
+;------------------------------------------------------------------------------
+
+[Strings] 
+COMPANY="ZkSoftWare"
+MFGNAME="ZkSoftWare"
+Modem3="FP Terminal" 
+SERVICE="Fingerprint Identify System USB-Driver"
