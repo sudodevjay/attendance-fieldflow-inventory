@@ -70,6 +70,7 @@ public static class PayrollService
             if (e.MonthlySalary == 0) remark.Add("Salary set nahi hai (Employees → Addition)");
             if (lateCut > 0) remark.Add($"{s.LateCount} late = {Num(lateCut)} din cut");
             if (s.Leave > s.PaidLeave) remark.Add($"{Num(s.Leave - s.PaidLeave)} din leave bina paise");
+            if (s.PendingLeave > 0) remark.Add($"{Num(s.PendingLeave)} din leave PENDING: approve karein, abhi absent gine");
 
             t.Rows.Add(s.EnrollNo, s.Name, s.Department, Money(e.MonthlySalary), monthDays, Num(s.PaidDays), s.LateCount,
                 Num(lateCut), Num(payable), Money(Math.Round(perDay, 2)), Money(salary),
@@ -93,7 +94,9 @@ public static class PayrollService
         var emps = q.AsEnumerable().OrderBy(e => AttendanceProcessor.SortKey(e.EnrollNo)).ToList();
         var ids = emps.Select(e => e.Id).ToList();
         var (start, end) = (new DateTime(year, 1, 1), new DateTime(year, 12, 31));
-        var leaves = db.LeaveEntries.AsNoTracking().Where(l => ids.Contains(l.EmployeeId) && l.FromDate <= end && l.ToDate >= start).ToList();
+        var all = db.LeaveEntries.AsNoTracking().Where(l => ids.Contains(l.EmployeeId) && l.FromDate <= end && l.ToDate >= start).ToList();
+        var leaves = all.Where(l => l.Status == LeaveStatus.Approved).ToList();
+        var pending = all.Where(l => l.Status == LeaveStatus.Pending).ToList();
         var holidays = Holidays(db, start, end);
 
         var t = new DataTable();
@@ -104,6 +107,7 @@ public static class PayrollService
             else t.Columns.Add($"{lt.Code} Taken");
         }
         t.Columns.Add("Over quota (LWP)");
+        t.Columns.Add("Pending (not approved)");
 
         foreach (var e in emps)
         {
@@ -121,13 +125,15 @@ public static class PayrollService
                 else row.Add(Num(taken));
             }
             row.Add(Num(over));
+            row.Add(Num(pending.Where(l => l.EmployeeId == e.Id)
+                .SelectMany(l => AttendanceProcessor.LeaveDays(l, e.Shift, holidays)).Where(x => x.Date.Year == year).Sum(x => x.Days)));
             t.Rows.Add(row.ToArray());
         }
-        return new ReportResult { Title = title, Subtitle = $"Year {year}  (Taken me aage ki planned leave bhi shamil hai)", Table = t };
+        return new ReportResult { Title = title, Subtitle = $"Year {year}  (sirf Approved leave; aage ki approved leave bhi shamil hai)", Table = t };
     }
 
-    /// <summary>Quota and days already taken (whole year, planned leave included) of one leave type, for the Add Leave warning.</summary>
-    public static (double quota, double taken) Balance(int employeeId, int leaveTypeId, int year)
+    /// <summary>Quota and approved days (whole year, planned leave included) of one leave type, for the quota warning.</summary>
+    public static (double quota, double taken) Balance(int employeeId, int leaveTypeId, int year, int? excludeLeaveId = null)
     {
         using var db = new AppDbContext();
         var type = db.LeaveTypes.AsNoTracking().First(x => x.Id == leaveTypeId);
@@ -135,7 +141,8 @@ public static class PayrollService
         var (start, end) = (new DateTime(year, 1, 1), new DateTime(year, 12, 31));
         var holidays = Holidays(db, start, end);
         double taken = db.LeaveEntries.AsNoTracking()
-            .Where(l => l.EmployeeId == employeeId && l.LeaveTypeId == leaveTypeId && l.FromDate <= end && l.ToDate >= start).AsEnumerable()
+            .Where(l => l.EmployeeId == employeeId && l.LeaveTypeId == leaveTypeId && l.FromDate <= end && l.ToDate >= start &&
+                        l.Status == LeaveStatus.Approved && l.Id != (excludeLeaveId ?? 0)).AsEnumerable()
             .SelectMany(l => AttendanceProcessor.LeaveDays(l, emp.Shift, holidays)).Where(x => x.Date.Year == year).Sum(x => x.Days);
         return (type.YearlyQuota, taken);
     }

@@ -140,6 +140,10 @@ Software khula rahe to har **5 minute** (Database Option → *Auto-sync: har X m
   Ek employee chunkar generate karein to uski salary slip jaisi report banti hai.
 - **Leave quota**: Leave / Holidays → *Leave Types* → Edit → *Yearly quota* (jaise CL 12). Quota khatam hone ke baad li gayi
   leave us din `LWP` (bina paise) dikhti hai aur Paid Days me nahi judti. Leave ke beech ke weekly off / holiday leave me nahi gine jaate.
+- **Leave approval**: har leave ka Status *Pending / Approved / Rejected*, *Applied on* (email / request ki date),
+  *Approved by*, *Decided on*. Sirf **Approved** leave attendance, salary aur quota me ginti hai; Pending wale din absent rehte hain
+  (remark "leave pending") aur Salary Sheet me "PENDING: approve karein" aata hai. Leave Entries tab me Pending upar dikhti hain;
+  kai select karke **✔ Approve** / **✖ Reject**, ya double-click / **✎ Edit**. Purane version me daali leave Approved maani jaati hai.
 - **Leave Balance**: Leave / Holidays → *Leave Balance* tab, ya Report → *Leave Balance (Yearly)*: quota, li gayi leave
   (aage ki planned bhi), balance. Quota se zyada leave daalte waqt software pehle chetavni deta hai.
 

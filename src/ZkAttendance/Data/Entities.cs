@@ -112,6 +112,9 @@ public class LeaveType
     public override string ToString() => $"{Code} - {Name}";
 }
 
+/// <summary>Only approved leave counts in attendance, salary and quota.</summary>
+public enum LeaveStatus { Pending = 0, Approved = 1, Rejected = 2 }
+
 public class LeaveEntry
 {
     public int Id { get; set; }
@@ -123,6 +126,12 @@ public class LeaveEntry
     public DateTime ToDate { get; set; }
     public bool IsHalfDay { get; set; }
     [MaxLength(200)] public string? Reason { get; set; }
+    public LeaveStatus Status { get; set; } = LeaveStatus.Pending;
+    /// <summary>When the employee asked (e.g. date of the email).</summary>
+    public DateTime? AppliedOn { get; set; }
+    [MaxLength(100)] public string? ApprovedBy { get; set; }
+    /// <summary>When it was approved or rejected.</summary>
+    public DateTime? ApprovedOn { get; set; }
 }
 
 public class Holiday

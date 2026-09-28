@@ -171,6 +171,9 @@ public static class ReportService
         "HD" => (Color.FromArgb(254, 243, 199), Color.FromArgb(146, 64, 14)),
         "H" => (Color.FromArgb(224, 231, 255), Color.FromArgb(55, 48, 163)),
         "WO" => (Color.FromArgb(237, 237, 240), Color.FromArgb(82, 82, 91)),
+        "Approved" => (Color.FromArgb(220, 245, 226), Color.FromArgb(22, 101, 52)),
+        "Pending" => (Color.FromArgb(254, 243, 199), Color.FromArgb(146, 64, 14)),
+        "Rejected" => (Color.FromArgb(254, 226, 226), Color.FromArgb(153, 27, 27)),
         "" or "-" => null,
         _ => (Color.FromArgb(243, 232, 255), Color.FromArgb(107, 33, 168)), // leave codes
     };

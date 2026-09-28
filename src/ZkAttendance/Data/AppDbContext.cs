@@ -85,6 +85,11 @@ public class AppDbContext : DbContext
             ("Employees", "MonthlySalary", "decimal(18,2) NOT NULL DEFAULT 0"),
             ("Employees", "OtRatePerHour", "decimal(18,2) NOT NULL DEFAULT 0"),
             ("LeaveTypes", "YearlyQuota", "float NOT NULL DEFAULT 0"),
+            // Leave entered before approval existed was already counted, so it becomes Approved (1).
+            ("LeaveEntries", "Status", "int NOT NULL DEFAULT 1"),
+            ("LeaveEntries", "AppliedOn", "datetime2 NULL"),
+            ("LeaveEntries", "ApprovedBy", "nvarchar(100) NULL"),
+            ("LeaveEntries", "ApprovedOn", "datetime2 NULL"),
         ];
         foreach (var (table, column, type) in columns)
 #pragma warning disable EF1002 // identifiers come from the constant list above

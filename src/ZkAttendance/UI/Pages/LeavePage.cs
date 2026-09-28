@@ -22,8 +22,13 @@ public class LeavePage : PageBase
         Toolbar.Controls.Add(_year);
 
         var tabs = new TabControl { Dock = DockStyle.Fill, Font = Theme.Bold, Padding = new Point(16, 6) };
+        Ui.ColorStatus(_leaves, ["Status"]);
+        _leaves.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) EditLeave(Ui.SelectedId(_leaves)); };
         tabs.TabPages.Add(Tab("Leave Entries", _leaves,
-            Ui.Button("＋ Add Leave", (_, _) => AddLeave(), ButtonStyle.Primary),
+            Ui.Button("＋ Add Leave", (_, _) => EditLeave(null), ButtonStyle.Primary),
+            Ui.Button("✎ Edit", (_, _) => EditLeave(Ui.SelectedId(_leaves))),
+            Ui.Button("✔ Approve", (_, _) => Decide(LeaveStatus.Approved), ButtonStyle.Success),
+            Ui.Button("✖ Reject", (_, _) => Decide(LeaveStatus.Rejected)),
             Ui.Button("🗑 Delete", (_, _) => DeleteRows(_leaves, (db, ids) => db.LeaveEntries.Where(l => ids.Contains(l.Id)).ExecuteDelete()), ButtonStyle.Danger)));
         tabs.TabPages.Add(Tab("Leave Balance", _balance,
             Ui.Button("⤓ Excel", (_, _) => ExportBalance(), ButtonStyle.Success)));
@@ -59,11 +64,14 @@ public class LeavePage : PageBase
             using var db = new AppDbContext();
 
             var leaves = db.LeaveEntries.AsNoTracking().Include(l => l.Employee).Include(l => l.LeaveType)
-                .Where(l => l.FromDate <= to && l.ToDate >= from).OrderByDescending(l => l.FromDate).ToList();
+                .Where(l => l.FromDate <= to && l.ToDate >= from)
+                .OrderBy(l => l.Status == LeaveStatus.Pending ? 0 : 1).ThenByDescending(l => l.FromDate).ToList();
             _leaves.DataSource = Ui.ToTable(leaves,
-                ("Id", l => l.Id), ("Emp ID", l => l.Employee?.EnrollNo), ("Name", l => l.Employee?.Name), ("Type", l => l.LeaveType?.Code),
-                ("From", l => l.FromDate.ToString("dd-MM-yyyy")), ("To", l => l.ToDate.ToString("dd-MM-yyyy")),
-                ("Days", l => l.IsHalfDay ? 0.5 : (l.ToDate - l.FromDate).Days + 1), ("Half Day", l => l.IsHalfDay ? "Yes" : ""), ("Reason", l => l.Reason));
+                ("Id", l => l.Id), ("Status", l => l.Status.ToString()), ("Emp ID", l => l.Employee?.EnrollNo), ("Name", l => l.Employee?.Name),
+                ("Type", l => l.LeaveType?.Code), ("From", l => l.FromDate.ToString("dd-MM-yyyy")), ("To", l => l.ToDate.ToString("dd-MM-yyyy")),
+                ("Days", l => l.IsHalfDay ? 0.5 : (l.ToDate - l.FromDate).Days + 1), ("Half Day", l => l.IsHalfDay ? "Yes" : ""),
+                ("Applied On", l => l.AppliedOn?.ToString("dd-MM-yyyy")), ("Approved By", l => l.ApprovedBy),
+                ("Decided On", l => l.ApprovedOn?.ToString("dd-MM-yyyy")), ("Reason", l => l.Reason));
 
             _holidays.DataSource = Ui.ToTable(db.Holidays.AsNoTracking().Where(h => h.Date >= from && h.Date <= to).OrderBy(h => h.Date).ToList(),
                 ("Id", h => h.Id), ("Date", h => h.Date.ToString("dd-MM-yyyy")), ("Day", h => h.Date.DayOfWeek.ToString()), ("Holiday", h => h.Name));
@@ -78,40 +86,96 @@ public class LeavePage : PageBase
         catch (Exception ex) { Ui.Error(ex); }
     }
 
-    private void AddLeave()
+    private static readonly string[] StatusNames = ["Pending", "Approved", "Rejected"];
+
+    /// <summary>Add (id = null) or edit a leave request: who, which type, dates, when asked, status and who approved.</summary>
+    private void EditLeave(int? id)
     {
         try
         {
             using var db = new AppDbContext();
-            var emps = db.Employees.Where(e => e.IsActive).AsEnumerable().OrderBy(e => AttendanceProcessor.SortKey(e.EnrollNo)).ToList();
+            var l = id == null ? new LeaveEntry { FromDate = DateTime.Today, ToDate = DateTime.Today, AppliedOn = DateTime.Today }
+                               : db.LeaveEntries.First(x => x.Id == id);
+            var emps = db.Employees.Where(e => e.IsActive || e.Id == l.EmployeeId).AsEnumerable()
+                .OrderBy(e => AttendanceProcessor.SortKey(e.EnrollNo)).ToList();
             var types = db.LeaveTypes.OrderBy(t => t.Code).ToList();
-            var dlg = new FormDialog("Add Leave");
-            var emp = dlg.AddCombo("Employee", emps);
-            var type = dlg.AddCombo("Leave type", types);
-            var from = dlg.AddDate("From", DateTime.Today);
-            var to = dlg.AddDate("To", DateTime.Today);
-            var half = dlg.AddCheck("Half day", false, "Half day (single date)");
-            var reason = dlg.AddText("Reason", null, multiline: true);
+            var dlg = new FormDialog(id == null ? "Add Leave" : "Edit Leave");
+            var emp = dlg.AddCombo("Employee", emps, emps.FirstOrDefault(e => e.Id == l.EmployeeId));
+            var type = dlg.AddCombo("Leave type", types, types.FirstOrDefault(t => t.Id == l.LeaveTypeId));
+            var from = dlg.AddDate("From", l.FromDate);
+            var to = dlg.AddDate("To", l.ToDate);
+            var half = dlg.AddCheck("Half day", l.IsHalfDay, "Half day (single date)");
+            var applied = dlg.AddDate("Applied on (email / request date)", l.AppliedOn, optional: true);
+            var status = dlg.AddCombo("Status", StatusNames, StatusNames[(int)l.Status]);
+            var by = dlg.AddText("Approved / Rejected by", l.ApprovedBy ?? (id == null ? AppDbContext.GetSetting("Leave.LastApprover") : ""));
+            var reason = dlg.AddText("Reason / remark", l.Reason, multiline: true);
+            dlg.AddNote("Sirf 'Approved' leave attendance, salary aur quota me ginti hai. 'Pending' wale din tab tak absent maane jaate hain.");
+            void Toggle() => by.Enabled = status.SelectedIndex != (int)LeaveStatus.Pending;
+            status.SelectedIndexChanged += (_, _) => Toggle();
+            Toggle();
             dlg.Validator = () =>
             {
                 if (emp.SelectedItem == null || type.SelectedItem == null) return "Employee aur leave type chunein.";
                 if (to.Value.Date < from.Value.Date) return "'To' date 'From' se pehle nahi ho sakti.";
                 if (half.Checked && to.Value.Date != from.Value.Date) return "Half day leave sirf ek date ke liye ho sakti hai.";
+                if (status.SelectedIndex != (int)LeaveStatus.Pending && string.IsNullOrWhiteSpace(by.Text))
+                    return "Approve / Reject kisne kiya, naam likhein.";
                 return null;
             };
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
-            var entry = new LeaveEntry
-            {
-                EmployeeId = ((Employee)emp.SelectedItem!).Id, LeaveTypeId = ((LeaveType)type.SelectedItem!).Id,
-                FromDate = from.Value.Date, ToDate = to.Value.Date, IsHalfDay = half.Checked, Reason = reason.Text.Trim()
-            };
-            if (!ConfirmQuota(entry, (LeaveType)type.SelectedItem!)) return;
-            db.LeaveEntries.Add(entry);
+            var newStatus = (LeaveStatus)status.SelectedIndex;
+            l.EmployeeId = ((Employee)emp.SelectedItem!).Id;
+            l.LeaveTypeId = ((LeaveType)type.SelectedItem!).Id;
+            l.FromDate = from.Value.Date;
+            l.ToDate = to.Value.Date;
+            l.IsHalfDay = half.Checked;
+            l.AppliedOn = applied.Checked ? applied.Value.Date : null;
+            l.Reason = reason.Text.Trim();
+            if (newStatus == LeaveStatus.Approved && !ConfirmQuota(l, (LeaveType)type.SelectedItem!)) return;
+            SetStatus(l, newStatus, by.Text);
+            if (id == null) db.LeaveEntries.Add(l);
             db.SaveChanges();
             LoadData();
+            AppState.RaiseDataChanged();
         }
         catch (Exception ex) { Ui.Error(ex); }
+    }
+
+    /// <summary>Approve / reject the selected requests in one go.</summary>
+    private void Decide(LeaveStatus decision)
+    {
+        var ids = Ui.SelectedIds(_leaves);
+        if (ids.Count == 0) { Ui.Info("Pehle leave select karein."); return; }
+        var word = decision == LeaveStatus.Approved ? "Approve" : "Reject";
+        var by = FormDialog.Prompt(this, $"{word} leave", $"{ids.Count} leave {word.ToLowerInvariant()} karein.\nKisne {word.ToLowerInvariant()} ki (naam)?",
+            AppDbContext.GetSetting("Leave.LastApprover"));
+        if (string.IsNullOrWhiteSpace(by)) return;
+        try
+        {
+            using var db = new AppDbContext();
+            foreach (var l in db.LeaveEntries.Include(x => x.LeaveType).Where(x => ids.Contains(x.Id)).ToList())
+            {
+                if (decision == LeaveStatus.Approved && l.Status != LeaveStatus.Approved && l.LeaveType != null && !ConfirmQuota(l, l.LeaveType)) continue;
+                SetStatus(l, decision, by);
+            }
+            db.SaveChanges();
+            LoadData();
+            AppState.RaiseDataChanged();
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+
+    private static void SetStatus(LeaveEntry l, LeaveStatus status, string by)
+    {
+        if (status == LeaveStatus.Pending) { l.ApprovedBy = null; l.ApprovedOn = null; }
+        else
+        {
+            if (l.Status != status || l.ApprovedOn == null) l.ApprovedOn = DateTime.Today;
+            l.ApprovedBy = by.Trim();
+            AppDbContext.SetSetting("Leave.LastApprover", l.ApprovedBy);
+        }
+        l.Status = status;
     }
 
     /// <summary>Warns when the new leave goes beyond the yearly quota (the extra days become unpaid).</summary>
@@ -120,7 +184,7 @@ public class LeavePage : PageBase
         if (!type.IsPaid || type.YearlyQuota <= 0) return true;
         double days = PayrollService.DaysFor(entry);
         if (entry.FromDate.Year != entry.ToDate.Year) return true;
-        var (quota, taken) = PayrollService.Balance(entry.EmployeeId, type.Id, entry.FromDate.Year);
+        var (quota, taken) = PayrollService.Balance(entry.EmployeeId, type.Id, entry.FromDate.Year, entry.Id);
         double left = Math.Max(0, quota - taken);
         if (days <= left) return true;
         return Ui.Confirm($"{type.Code} balance: {left:0.#} din (quota {quota:0.#}, pehle li {taken:0.#}).\n" +

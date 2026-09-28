@@ -36,6 +36,8 @@ public class DayRecord
     public double LeaveDays { get; set; }
     /// <summary>Part of <see cref="LeaveDays"/> that is paid (less than it when the yearly quota ran out).</summary>
     public double PaidLeaveDays { get; set; }
+    /// <summary>Leave asked for this day but not approved yet (day is counted as absent until then).</summary>
+    public double PendingLeaveDays { get; set; }
     public string Remark { get; set; } = "";
 
     /// <summary>Attendance value used in payroll: 1 present, 0.5 half day.</summary>
@@ -57,6 +59,7 @@ public class MonthlySummary
     public double Absent { get; set; }
     public double Leave { get; set; }
     public double PaidLeave { get; set; }
+    public double PendingLeave { get; set; }
     public int Holidays { get; set; }
     public int WeeklyOffs { get; set; }
     public int LateCount { get; set; }
@@ -118,7 +121,10 @@ public static class AttendanceProcessor
                               .Select(d => d.Date).ToHashSet();
         var empIds = employees.Select(e => e.Id).ToList();
         var leaves = db.LeaveEntries.Include(l => l.LeaveType)
-            .Where(l => empIds.Contains(l.EmployeeId) && l.FromDate <= to && l.ToDate >= yearStart)
+            .Where(l => empIds.Contains(l.EmployeeId) && l.FromDate <= to && l.ToDate >= yearStart && l.Status == LeaveStatus.Approved)
+            .ToList();
+        var pendingLeaves = db.LeaveEntries.Include(l => l.LeaveType)
+            .Where(l => empIds.Contains(l.EmployeeId) && l.FromDate <= to && l.ToDate >= from && l.Status == LeaveStatus.Pending)
             .ToList();
 
         var result = new List<DayRecord>();
@@ -215,7 +221,16 @@ public static class AttendanceProcessor
                 else if (holiday) { rec.Status = DayStatus.Holiday; rec.Remark = holidayName ?? ""; }
                 else if (weeklyOff) rec.Status = DayStatus.WeeklyOff;
                 else if (leave != null) ApplyLeave(rec, leave, leave.IsHalfDay ? 0.5 : 1, keepStatus: false, QuotaLeft(leave, d));
-                else rec.Status = DayStatus.Absent;
+                else
+                {
+                    rec.Status = DayStatus.Absent;
+                    var pending = pendingLeaves.FirstOrDefault(l => l.EmployeeId == emp.Id && l.FromDate.Date <= d && l.ToDate.Date >= d);
+                    if (pending != null)
+                    {
+                        rec.PendingLeaveDays = pending.IsHalfDay ? 0.5 : 1;
+                        rec.Remark = Join(rec.Remark, $"{pending.LeaveType?.Code} leave pending (approve nahi hui)");
+                    }
+                }
             }
         }
         return result;
@@ -237,6 +252,7 @@ public static class AttendanceProcessor
                     // Half-day leave with no punches: the other half is absent.
                     if (d.LeaveDays < 1 && d.Status != DayStatus.HalfDay) s.Absent += 1 - d.LeaveDays;
                 }
+                s.PendingLeave += d.PendingLeaveDays;
                 if (d.Status == DayStatus.Holiday) s.Holidays++;
                 if (d.Status == DayStatus.WeeklyOff) s.WeeklyOffs++;
                 if (d.LateMinutes > 0) { s.LateCount++; s.LateMinutes += d.LateMinutes; }
