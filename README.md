@@ -147,7 +147,11 @@ me database me save hoti hai; purane version ki binary photo pehli baar khulne p
 - **Hisaab** (Report → *Salary Sheet (Monthly Pay)*, Excel / PDF):
   ek din = Salary ÷ mahine ke din; Payable Days = Paid Days − late cut; Salary = ek din × Payable Days;
   OT = OT ghante × rate (rate 0 ho to ek din ÷ shift ke ghante × multiplier); Net Pay = Salary + OT.
-  Ek employee chunkar generate karein to uski salary slip jaisi report banti hai.
+- **Salary Slip (PDF)**: Report → Month chunein (koi bhi report, "From" / "Month" picker) → employee chunein (ya *All employees*
+  = har employee ka ek page) → **🧾 Salary Slip**. Slip me company, employee details, attendance, Earnings (salary + OT) /
+  Deductions (absent / unpaid din, late), Net Pay aur rakam shabdon me (Indian lakh / crore) aati hai.
+  Salary = Monthly Salary − unpaid din × ek din − late katauti; Salary Sheet aur Slip dono yahi hisaab use karte hain.
+  Chalu mahine ki slip par chetavni aati hai ki aage ke din abhi paid nahi gine gaye.
 - **Leave quota**: Leave / Holidays → *Leave Types* → Edit → *Yearly quota* (jaise CL 12). Quota khatam hone ke baad li gayi
   leave us din `LWP` (bina paise) dikhti hai aur Paid Days me nahi judti. Leave ke beech ke weekly off / holiday leave me nahi gine jaate.
 - **Leave approval**: har leave ka Status *Pending / Approved / Rejected*, *Applied on* (email / request ki date),

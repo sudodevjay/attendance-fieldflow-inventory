@@ -24,6 +24,16 @@ public record PayrollRules(int LateCountForHalfDay, decimal OtMultiplier)
     public double LateCutDays(int lateDays) => LateCountForHalfDay > 0 ? lateDays / LateCountForHalfDay * 0.5 : 0;
 }
 
+/// <summary>One employee's pay for a month (Salary Sheet row and Salary Slip).</summary>
+public record PayLine(Employee Employee, MonthlySummary Summary, int MonthDays, decimal PerDay, double UnpaidDays,
+    decimal UnpaidDeduction, double LateCutDays, decimal LateDeduction, decimal Salary, decimal OtRate, decimal OtAmount,
+    decimal NetPay, string Remark)
+{
+    public double PayableDays => Math.Max(0, Summary.PaidDays - LateCutDays);
+    public decimal TotalDeductions => UnpaidDeduction + LateDeduction;
+    public decimal GrossEarnings => Employee.MonthlySalary + OtAmount;
+}
+
 /// <summary>Monthly salary sheet and yearly leave balance.</summary>
 public static class PayrollService
 {
@@ -32,39 +42,35 @@ public static class PayrollService
     public static string Money(decimal v) => v.ToString("#,##0.00", India);
 
     /// <summary>
-    /// Monthly salary: per day = salary ÷ days in the month; pay = per day × (paid days − late cut).
+    /// Monthly salary: per day = salary ÷ days in the month. Salary = monthly salary − unpaid days × per day − late cut × per day,
+    /// where unpaid days = month days − paid days (absent, unpaid leave, days before joining or still to come).
     /// OT = OT hours × rate; rate 0 on the employee = per day ÷ shift hours × OT multiplier.
     /// </summary>
-    public static ReportResult SalarySheet(string title, string period, DateTime monthStart, List<DayRecord> days)
+    public static List<PayLine> Compute(DateTime monthStart, List<DayRecord> days)
     {
         var rules = PayrollRules.Load();
         int monthDays = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);
         var ids = days.Select(d => d.EmployeeId).Distinct().ToList();
         Dictionary<int, Employee> emps;
         using (var db = new AppDbContext())
-            emps = db.Employees.AsNoTracking().Include(e => e.Shift).Where(e => ids.Contains(e.Id)).ToDictionary(e => e.Id);
+            emps = db.Employees.AsNoTracking().Include(e => e.Shift).Include(e => e.Department)
+                     .Where(e => ids.Contains(e.Id)).ToDictionary(e => e.Id);
 
-        var t = new DataTable();
-        foreach (var c in new[] { "Emp ID", "Name", "Department", "Monthly Salary", "Month Days", "Paid Days", "Late Days",
-                     "Late Cut Days", "Payable Days", "Per Day", "Salary", "OT Hrs", "OT Rate/Hr", "OT Amount", "Net Pay", "Remark" })
-            t.Columns.Add(c);
-
-        decimal totalSalary = 0, totalOt = 0, totalNet = 0;
+        var lines = new List<PayLine>();
         foreach (var s in AttendanceProcessor.Summarize(days))
         {
             var e = emps[s.EmployeeId];
             decimal perDay = e.MonthlySalary / monthDays;
+            double unpaidDays = Math.Max(0, monthDays - s.PaidDays);
             double lateCut = rules.LateCutDays(s.LateCount);
-            double payable = Math.Max(0, s.PaidDays - lateCut);
-            decimal salary = Math.Round(perDay * (decimal)payable, 2);
+            decimal unpaidDeduction = Math.Round(perDay * (decimal)unpaidDays, 2);
+            decimal lateDeduction = Math.Min(Math.Round(perDay * (decimal)lateCut, 2), e.MonthlySalary - unpaidDeduction);
+            decimal salary = e.MonthlySalary - unpaidDeduction - lateDeduction;
 
             double shiftHours = (e.Shift ?? new Shift()).Duration.TotalHours;
             decimal otRate = e.OtRatePerHour > 0 ? e.OtRatePerHour
                 : shiftHours > 0 ? Math.Round(perDay / (decimal)shiftHours * rules.OtMultiplier, 2) : 0;
-            decimal otHours = s.OvertimeMinutes / 60m;
-            decimal otAmount = Math.Round(otHours * otRate, 2);
-            decimal net = salary + otAmount;
-            totalSalary += salary; totalOt += otAmount; totalNet += net;
+            decimal otAmount = Math.Round(s.OvertimeMinutes / 60m * otRate, 2);
 
             var remark = new List<string>();
             if (e.MonthlySalary == 0) remark.Add("Salary not set (Employees → Addition)");
@@ -72,12 +78,30 @@ public static class PayrollService
             if (s.Leave > s.PaidLeave) remark.Add($"{Num(s.Leave - s.PaidLeave)} day(s) of leave unpaid");
             if (s.PendingLeave > 0) remark.Add($"{Num(s.PendingLeave)} day(s) of leave PENDING: approve it, counted as absent for now");
 
-            t.Rows.Add(s.EnrollNo, s.Name, s.Department, Money(e.MonthlySalary), monthDays, Num(s.PaidDays), s.LateCount,
-                Num(lateCut), Num(payable), Money(Math.Round(perDay, 2)), Money(salary),
-                AttendanceProcessor.Hm(s.OvertimeMinutes), Money(otRate), Money(otAmount), Money(net), string.Join("; ", remark));
+            lines.Add(new PayLine(e, s, monthDays, perDay, unpaidDays, unpaidDeduction, lateCut, lateDeduction, salary,
+                otRate, otAmount, salary + otAmount, string.Join("; ", remark)));
         }
+        return lines;
+    }
+
+    public static ReportResult SalarySheet(string title, string period, DateTime monthStart, List<DayRecord> days)
+    {
+        var rules = PayrollRules.Load();
+        var lines = Compute(monthStart, days);
+        int monthDays = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);
+
+        var t = new DataTable();
+        foreach (var c in new[] { "Emp ID", "Name", "Department", "Monthly Salary", "Month Days", "Paid Days", "Late Days",
+                     "Late Cut Days", "Payable Days", "Per Day", "Salary", "OT Hrs", "OT Rate/Hr", "OT Amount", "Net Pay", "Remark" })
+            t.Columns.Add(c);
+
+        foreach (var l in lines)
+            t.Rows.Add(l.Summary.EnrollNo, l.Summary.Name, l.Summary.Department, Money(l.Employee.MonthlySalary), l.MonthDays,
+                Num(l.Summary.PaidDays), l.Summary.LateCount, Num(l.LateCutDays), Num(l.PayableDays), Money(Math.Round(l.PerDay, 2)),
+                Money(l.Salary), AttendanceProcessor.Hm(l.Summary.OvertimeMinutes), Money(l.OtRate), Money(l.OtAmount), Money(l.NetPay), l.Remark);
         if (t.Rows.Count > 0)
-            t.Rows.Add("", "TOTAL", "", "", "", "", "", "", "", "", Money(totalSalary), "", "", Money(totalOt), Money(totalNet), "");
+            t.Rows.Add("", "TOTAL", "", "", "", "", "", "", "", "", Money(lines.Sum(l => l.Salary)), "", "",
+                Money(lines.Sum(l => l.OtAmount)), Money(lines.Sum(l => l.NetPay)), "");
 
         var rule = rules.LateCountForHalfDay > 0 ? $"every {rules.LateCountForHalfDay} late = ½ day deducted" : "late deduction off";
         return new ReportResult { Title = title, Subtitle = $"{period}   (Per day = Salary ÷ {monthDays}; {rule}; OT × {rules.OtMultiplier:0.##})", Table = t };
@@ -158,5 +182,5 @@ public static class PayrollService
     private static HashSet<DateTime> Holidays(AppDbContext db, DateTime from, DateTime to) =>
         db.Holidays.AsNoTracking().Where(h => h.Date >= from && h.Date <= to).Select(h => h.Date).AsEnumerable().Select(d => d.Date).ToHashSet();
 
-    private static string Num(double v) => v % 1 == 0 ? v.ToString("0") : v.ToString("0.0");
+    public static string Num(double v) => v % 1 == 0 ? v.ToString("0") : v.ToString("0.0");
 }

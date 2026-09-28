@@ -32,6 +32,7 @@ public class ReportsPage : PageBase
         Toolbar.Controls.Add(Ui.Button("▶ Generate", async (s, _) => await Ui.Busy((Control)s!, Generate), ButtonStyle.Primary));
         Toolbar.Controls.Add(Ui.Button("⤓ Excel", (_, _) => Export(pdf: false), ButtonStyle.Success));
         Toolbar.Controls.Add(Ui.Button("⤓ PDF", (_, _) => Export(pdf: true), ButtonStyle.Danger));
+        Toolbar.Controls.Add(Ui.Button("🧾 Salary Slip", async (s, _) => await Ui.Busy((Control)s!, SalarySlip)));
 
         Ui.ColorStatus(_grid, _statusCols);
         _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells;
@@ -87,6 +88,28 @@ public class ReportsPage : PageBase
         _grid.DataSource = _result.Table;
         foreach (DataGridViewColumn c in _grid.Columns) c.SortMode = DataGridViewColumnSortMode.Automatic;
         _caption.Text = $"{_result.Title}  —  {_result.Subtitle}   ({_result.Table.Rows.Count} rows)";
+    }
+
+    /// <summary>Salary slip PDF for the chosen month (the "From" / "Month" picker), for one employee or all shown by the filters.</summary>
+    private async Task SalarySlip()
+    {
+        var month = new DateTime(_from.Value.Year, _from.Value.Month, 1);
+        int? dept = (_dept.SelectedItem as Department)?.Id;
+        var emp = _emp.SelectedItem as Employee;
+        var lines = await Task.Run(() => PayrollService.Compute(month,
+            AttendanceProcessor.Process(month, month.AddMonths(1).AddDays(-1), dept, emp?.Id)));
+        if (lines.Count == 0) { Ui.Info("No employees found for the selected filters."); return; }
+
+        var who = emp != null ? $"{emp.EnrollNo}_{emp.Name.Replace(' ', '_')}" : "All";
+        var path = Ui.SaveFile("PDF (*.pdf)|*.pdf", $"Salary_Slip_{month:yyyy_MM}_{who}.pdf");
+        if (path == null) return;
+        try
+        {
+            await Task.Run(() => SalarySlipPdf.Export(lines, month, path));
+            if (Ui.Confirm($"Salary slip saved ({lines.Count} employee(s), {month:MMMM yyyy}):\n{path}\n\nOpen it now?"))
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex) { Ui.Error(ex); }
     }
 
     private void Export(bool pdf)
