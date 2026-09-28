@@ -130,12 +130,12 @@ Software khula rahe to har **5 minute** (Database Option → *Auto-sync: har X m
    (ya **Download user info and Fp** se device ke naam le lein)
 3. **Report** → report chunein → **Generate** → **Excel / PDF**
 
-## Live Log (aaj ke punch)
+## AC Log (aaj ke punch, live)
 
-Toolbar **Live Log** (ya sidebar / Search-Print menu): chuni hui date ke saare punch, sabse naya upar, har line me employee
-ki photo, samay, AC No, naam, department, IN / OUT (din ka pehla punch IN, baaki OUT), verify (Fingerprint / Password / Card).
-Upar sabse taaza punch badi photo ke saath, aur ginti: Total, Aaye, Late, Leave, Nahi aaye; daayein "Abhi tak nahi aaye".
-Jab tak yeh screen khuli hai, software har **30 second** device se naye punch laata hai (sirf tab download jab device ki ginti badle).
+Toolbar **AC Log** kholte hi **aaj** ke punch dikhte hain, sabse naya upar: employee ki photo, date, samay, AC No, naam,
+IN / OUT (din ka pehla punch IN, baaki OUT), verify (Finger / Password / Card), source. Upar aaj ki ginti: aaye / late / nahi aaye.
+Date range me aaj shamil ho aur *Live* tick ho to har **30 second** device se naye punch aate hain; screen sirf naya punch aane par
+refresh hoti hai (chune hue rows nahi hat-te). **Aaj** button wapas aaj par le aata hai; purani date From / To se dekhein.
 
 Photo: Employees → Basic Information → Photo → folder icon. Photo 300 px tak chhoti karke **base64 text** (`Employees.PhotoBase64`)
 me database me save hoti hai; purane version ki binary photo pehli baar khulne par apne aap base64 me badal jaati hai.
