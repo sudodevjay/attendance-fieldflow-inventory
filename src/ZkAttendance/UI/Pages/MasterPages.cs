@@ -14,7 +14,7 @@ public class ShiftsPage : PageBase
         Toolbar.Controls.Add(Ui.Button("＋ Add Shift", (_, _) => Edit(null), ButtonStyle.Primary));
         Toolbar.Controls.Add(Ui.Button("✎ Edit", (_, _) => Edit(Ui.SelectedId(_grid))));
         Toolbar.Controls.Add(Ui.Button("🗑 Delete", (_, _) => Delete(), ButtonStyle.Danger));
-        Toolbar.Controls.Add(Ui.Label("Night shift ke liye End time Start se kam rakhein (jaise 22:00 → 06:00).", color: Theme.Muted));
+        Toolbar.Controls.Add(Ui.Label("For a night shift, set the End time earlier than the Start time (e.g. 22:00 → 06:00).", color: Theme.Muted));
         _grid.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) Edit(Ui.SelectedId(_grid)); };
         Body.Controls.Add(Ui.Card(_grid));
     }
@@ -48,8 +48,8 @@ public class ShiftsPage : PageBase
             var half = dlg.AddNumber("Half day if worked < (min)", s.HalfDayMinutes, 0, 1440);
             var ot = dlg.AddNumber("OT counted after (min)", s.MinOvertimeMinutes, 0, 1440);
             var offs = dlg.AddCheckList("Weekly off", Days, s.WeeklyOffs.Split(',', StringSplitOptions.TrimEntries));
-            dlg.AddNote("Late = shift start + grace ke baad aaye. OT = shift ke ghanton se zyada kaam, agar extra time 'OT counted after' se zyada ho.");
-            dlg.Validator = () => string.IsNullOrWhiteSpace(name.Text) ? "Shift name zaroori hai." : null;
+            dlg.AddNote("Late = arrived after shift start + grace. OT = work beyond the shift hours, when the extra time exceeds 'OT counted after'.");
+            dlg.Validator = () => string.IsNullOrWhiteSpace(name.Text) ? "Shift name is required." : null;
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
             s.Name = name.Text.Trim();
@@ -69,7 +69,7 @@ public class ShiftsPage : PageBase
 
     private void Delete()
     {
-        if (Ui.SelectedId(_grid) is not { } id || !Ui.Confirm("Shift delete karein? Is shift ke employees bina shift ke ho jayenge.")) return;
+        if (Ui.SelectedId(_grid) is not { } id || !Ui.Confirm("Delete this shift? Employees on this shift will have no shift assigned.")) return;
         try
         {
             using var db = new AppDbContext();

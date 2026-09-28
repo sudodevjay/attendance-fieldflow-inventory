@@ -149,7 +149,7 @@ public class MainForm : Form
 
         var help = new ToolStripMenuItem("Help");
         Add(help, "Help (README)", Icons.Help, Theme.Accent, OpenReadme);
-        Add(help, "About", Icons.Info, Theme.Accent, () => Ui.Info("Attendance Management Program\n\nDrivers: ZKTeco SDK (USB / Serial / TCP), ADMS Push, pendrive file import\n.NET 8 WinForms + SQL Server"));
+        Add(help, "About", Icons.Info, Theme.Accent, () => Ui.Info("Attendance Management Program\n\nDrivers: ZKTeco SDK (USB / Serial / TCP), ADMS Push, USB flash drive file import\n.NET 8 WinForms + SQL Server"));
 
         m.Items.AddRange([data, att, search, maint, dev, help]);
         return m;
@@ -326,7 +326,7 @@ public class MainForm : Form
         var all = DeviceActions.All();
         var list = all.Where(p => ids.Contains(p.Id)).ToList();
         if (list.Count == 0 && all.Count > 0) list.Add(DeviceActions.Current());
-        if (list.Count == 0) throw new DeviceException("Pehle Machine List me device add karein (toolbar → Device).");
+        if (list.Count == 0) throw new DeviceException("Add a device to the Machine List first (toolbar → Device).");
         return list;
     }
 
@@ -406,13 +406,13 @@ public class MainForm : Form
         var (punches, r) = await DeviceActions.DownloadAttendance(p);
         ShowRecords(punches, p.Name);
         try { await DeviceActions.RefreshInfo(p.Id); } catch { }
-        Ui.Info($"{p.Name}: {punches.Count} records mile.\nNew saved: {r.Added}\nAlready in database: {r.Duplicates}" +
+        Ui.Info($"{p.Name}: {punches.Count} record(s) downloaded.\nNew saved: {r.Added}\nAlready in database: {r.Duplicates}" +
                 (r.NewEmployees > 0 ? $"\nNew AC No. added to Employees: {r.NewEmployees}" : ""));
     });
 
     private Task DownloadUsers() => OnSelected("Download user info and Fp", async (p, _) =>
     {
-        bool overwrite = Ui.Confirm("Software me jo employee naam pehle se hain, unhe device ke naam se overwrite karein?\n\n(No = sirf naye users aur khali naam update honge)");
+        bool overwrite = Ui.Confirm("Overwrite employee names that already exist in the software with the names from the device?\n\n(No = only new users and empty names will be updated.)");
         var (added, updated, fingers) = await DeviceActions.DownloadUsers(p, overwrite);
         Ui.Info($"{p.Name}: Download user info and Fp complete.\nNew: {added}\nUpdated: {updated}\nFingerprint templates: {fingers}");
     });
@@ -421,12 +421,12 @@ public class MainForm : Form
     {
         List<int> ids;
         using (var db = new AppDbContext()) ids = db.Employees.Where(e => e.IsActive).Select(e => e.Id).ToList();
-        if (!Ui.Confirm($"{ids.Count} active employees (naam + fingerprints) selected device par upload karein?\n(Kuch hi employees bhejne ho to Employees window se upload karein.)"))
+        if (!Ui.Confirm($"Upload {ids.Count} active employee(s) (names + fingerprints) to the selected device?\n(To upload only some employees, use the Employees window.)"))
             return Task.CompletedTask;
         return OnSelected("Upload user info and FP", async (p, _) =>
         {
             int rejected = await DeviceActions.UploadUsers(p, ids);
-            Ui.Info($"{p.Name}: {ids.Count} users upload ho gaye." + DeviceActions.RejectedFingersNote(rejected));
+            Ui.Info($"{p.Name}: {ids.Count} user(s) uploaded." + DeviceActions.RejectedFingersNote(rejected));
         });
     }
 
@@ -444,7 +444,7 @@ public class MainForm : Form
 
     private Task ClearLogs()
     {
-        if (!Ui.Confirm("Selected device ke saare attendance records delete honge.\nPehle download hoga, phir clear. Continue?")) return Task.CompletedTask;
+        if (!Ui.Confirm("All attendance records on the selected device will be deleted.\nThey will be downloaded first, then cleared. Continue?")) return Task.CompletedTask;
         return OnSelected("Clear attendance logs", async (p, d) =>
         {
             d.Require(DeviceFeatures.ClearLogs, "Clear attendance logs");
@@ -458,7 +458,7 @@ public class MainForm : Form
 
     private Task RestartDevice()
     {
-        if (!Ui.Confirm("Selected device restart karein?")) return Task.CompletedTask;
+        if (!Ui.Confirm("Restart the selected device?")) return Task.CompletedTask;
         return OnSelected("Restart", async (p, d) =>
         {
             d.Require(DeviceFeatures.Restart, "Restart device");
@@ -485,12 +485,12 @@ public class MainForm : Form
         var port = dlg.AddNumber("Port (TCP)", p.TcpPort, 1, 65535);
         var key = dlg.AddNumber("Comm Key (Password)", p.CommPassword, 0, 999999);
         var sn = dlg.AddText("Serial Number (ADMS)", p.SerialNumber);
-        dlg.AddNote("USB / Serial / Ethernet: ZKTeco SDK se (LX50, K-series, iClock, eSSL, B&W aur TFT sab).\n" +
-                    "LX50 mini-USB: Comm type = USB rakhein. Connect na ho to software khud saare COM ports / baud rates " +
-                    "try karke jo setting chale use save kar leta hai.\n" +
-                    "ADMS (Push / Cloud): device khud is PC par data bhejta hai. Device menu → Comm → Cloud Server Setting me " +
-                    $"is PC ka IP aur port {AdmsHost.ConfiguredPort} daalein; Serial Number device ke System Info me milega.\n" +
-                    "Comm Key device menu jaisa hi ho (default 0).");
+        dlg.AddNote("USB / Serial / Ethernet: uses the ZKTeco SDK (LX50, K-series, iClock, eSSL, B&W and TFT models).\n" +
+                    "LX50 mini-USB: keep Comm type = USB. If it does not connect, the software tries all COM ports / baud rates " +
+                    "and saves the setting that works.\n" +
+                    "ADMS (Push / Cloud): the device sends data to this PC by itself. In the device menu → Comm → Cloud Server Setting, " +
+                    $"enter this PC's IP address and port {AdmsHost.ConfiguredPort}; the Serial Number is shown in the device's System Info.\n" +
+                    "Comm Key must match the device (default 0).");
         void Toggle()
         {
             com.Enabled = baud.Enabled = kind.SelectedIndex == 1;
@@ -501,8 +501,8 @@ public class MainForm : Form
         kind.SelectedIndexChanged += (_, _) => Toggle();
         Toggle();
         dlg.Validator = () =>
-            string.IsNullOrWhiteSpace(name.Text) ? "Device Name zaroori hai." :
-            kind.SelectedIndex == 3 && string.IsNullOrWhiteSpace(sn.Text) ? "ADMS device ke liye Serial Number zaroori hai." : null;
+            string.IsNullOrWhiteSpace(name.Text) ? "Device Name is required." :
+            kind.SelectedIndex == 3 && string.IsNullOrWhiteSpace(sn.Text) ? "Serial Number is required for an ADMS device." : null;
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
         var oldKind = p.Kind;
 
@@ -525,7 +525,7 @@ public class MainForm : Form
         if (p.Kind == ConnectionKind.Adms && !AdmsServer.Running)
         {
             try { AdmsHost.Start(AdmsHost.ConfiguredPort); }
-            catch (Exception ex) { Ui.Error(new DeviceException($"ADMS server port {AdmsHost.ConfiguredPort} start nahi hua: {ex.Message}")); }
+            catch (Exception ex) { Ui.Error(new DeviceException($"Could not start the ADMS server on port {AdmsHost.ConfiguredPort}: {ex.Message}")); }
         }
         LoadMachines();
     }
@@ -533,7 +533,7 @@ public class MainForm : Form
     private void DeleteDevice()
     {
         var ids = SelectedDeviceIds();
-        if (ids.Count == 0 || !Ui.Confirm($"{ids.Count} device(s) Machine List se delete karein?\n(Attendance data database me rahega.)")) return;
+        if (ids.Count == 0 || !Ui.Confirm($"Delete {ids.Count} device(s) from the Machine List?\n(Attendance data will remain in the database.)")) return;
         using var db = new AppDbContext();
         foreach (var id in ids) AppState.Remove(id);
         db.DeviceProfiles.Where(p => ids.Contains(p.Id)).ExecuteDelete();
@@ -546,12 +546,12 @@ public class MainForm : Form
     {
         using var dlg = new OpenFileDialog
         {
-            Title = "Import Attendance Checking Data (pendrive: 1_attlog.dat / GLG_001.TXT)",
+            Title = "Import Attendance Checking Data (USB flash drive: 1_attlog.dat / GLG_001.TXT)",
             Filter = "Attendance files (*.dat;*.txt;*.csv)|*.dat;*.txt;*.csv|All files (*.*)|*.*"
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
         var punches = UsbFileImporter.Parse(dlg.FileName);
-        if (punches.Count == 0) { Ui.Info("File me koi attendance record nahi mila. Format check karein."); return; }
+        if (punches.Count == 0) { Ui.Info("No attendance records found in the file. Check the file format."); return; }
         var r = SyncService.SavePunches(punches, PunchSource.UsbFile);
         ShowRecords(punches, "USB");
         AppState.RaiseDataChanged();
@@ -559,13 +559,13 @@ public class MainForm : Form
     }
 
     private void NotSupported() =>
-        Ui.Info("ZKTeco LX50 me camera / access control nahi hai, isliye yeh option is device ke liye available nahi hai.");
+        Ui.Info("ZKTeco LX50 has no camera / access control, so this option is not available for this device.");
 
     private static void OpenReadme()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "README.md");
         if (File.Exists(path)) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("notepad.exe", $"\"{path}\""));
-        else Ui.Info("README.md nahi mili.");
+        else Ui.Info("README.md not found.");
     }
 
     private static void Safe(Action a)

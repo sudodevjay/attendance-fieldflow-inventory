@@ -52,10 +52,10 @@ public class DepartmentWindow : Form
         var help = new Label
         {
             Location = new Point(12, 52), Size = new Size(196, 240), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom,
-            Text = "Yahan aap department ke naam set kar sakte hain.\n\n" +
-                   "• Naya department: jis department ke andar banana hai use chunein aur 'Add' dabayein.\n\n" +
-                   "• Naam badalna: department par click karke 'Rename' ya F2 dabayein.\n\n" +
-                   "• Kisi department ko doosre ke andar le jaane ke liye use mouse se drag karke naye 'superior' department par chhod dein."
+            Text = "Here you can set up department names.\n\n" +
+                   "• New department: select the department to create it under and click 'Add'.\n\n" +
+                   "• Rename: click a department and press 'Rename' or F2.\n\n" +
+                   "• To move a department under another one, drag it with the mouse and drop it on the new 'superior' department."
         };
         prompt.Controls.AddRange([icon, title, help]);
 
@@ -126,10 +126,10 @@ public class DepartmentWindow : Form
     private void DeleteDept()
     {
         if (_tree.SelectedNode?.Tag is not int id) return;
-        if (_tree.SelectedNode.Nodes.Count > 0) { Ui.Info("Is department ke andar sub-departments hain. Pehle unhe delete ya move karein."); return; }
+        if (_tree.SelectedNode.Nodes.Count > 0) { Ui.Info("This department has sub-departments. Delete or move them first."); return; }
         using var db = new AppDbContext();
         int count = db.Employees.Count(e => e.DepartmentId == id);
-        if (!Ui.Confirm($"Department '{_tree.SelectedNode.Text}' delete karein?" + (count > 0 ? $"\n{count} employee(s) bina department ke ho jayenge." : ""))) return;
+        if (!Ui.Confirm($"Delete department '{_tree.SelectedNode.Text}'?" + (count > 0 ? $"\n{count} employee(s) will be left without a department." : ""))) return;
         db.Employees.Where(e => e.DepartmentId == id).ExecuteUpdate(s => s.SetProperty(e => e.DepartmentId, (int?)null));
         db.Departments.Where(d => d.Id == id).ExecuteDelete();
         LoadTree();
@@ -141,7 +141,7 @@ public class DepartmentWindow : Form
         var target = _tree.GetNodeAt(_tree.PointToClient(new Point(e.X, e.Y)));
         if (target == null || target == node) return;
         for (var t = target; t != null; t = t.Parent)
-            if (t == node) { Ui.Info("Department ko uske apne sub-department ke andar nahi rakh sakte."); return; }
+            if (t == node) { Ui.Info("A department cannot be moved under one of its own sub-departments."); return; }
 
         using var db = new AppDbContext();
         db.Departments.First(d => d.Id == id).ParentId = target.Tag as int?;

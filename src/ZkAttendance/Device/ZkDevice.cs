@@ -55,14 +55,14 @@ public sealed class ZkDevice : IAttendanceDevice
         if (TryConnect(p)) return Connected(p);
         int firstError = LastError();
         if (!autoDetect)
-            throw new DeviceException($"Device connect nahi hua ({Describe(p)}). {ErrorText(firstError)}");
+            throw new DeviceException($"Could not connect to the device ({Describe(p)}). {ErrorText(firstError)}");
         if (p.Kind is not (ConnectionKind.Usb or ConnectionKind.Serial))
-            throw new DeviceException($"Device connect nahi hua ({p.Kind}). {ErrorText(firstError)}\n" +
-                "Check: IP address, port, network cable, Comm Key (password) aur Machine No.");
+            throw new DeviceException($"Could not connect to the device ({p.Kind}). {ErrorText(firstError)}\n" +
+                "Check the IP address, port, network cable, Comm Key (password) and Machine No.");
 
         // The mini-USB port shows up either as a ZKTeco USB-client device or as a virtual COM port, depending on the
         // PC driver, and the device baud rate may differ from the saved one. Try every combination before giving up.
-        progress?.Report("Auto detecting USB / COM port...");
+        progress?.Report("Auto-detecting USB / COM port...");
         foreach (var c in Candidates(p))
         {
             progress?.Report($"Trying {Describe(c)}...");
@@ -83,7 +83,7 @@ public sealed class ZkDevice : IAttendanceDevice
                 ConnectionKind.Usb => _zk!.Connect_USB(p.MachineNumber),
                 ConnectionKind.Serial => _zk!.Connect_Com(ParseComPort(p.ComPort), p.MachineNumber, p.BaudRate),
                 ConnectionKind.Tcp => _zk!.Connect_Net(p.IpAddress, p.TcpPort),
-                _ => throw new DeviceException($"{p.Kind} ZKTeco SDK driver se connect nahi hota."),
+                _ => throw new DeviceException($"{p.Kind} connections are not supported by the ZKTeco SDK driver."),
             };
         }
         catch (DeviceException) { throw; }
@@ -130,13 +130,13 @@ public sealed class ZkDevice : IAttendanceDevice
     private static string NotFoundMessage(DeviceProfile p, int error)
     {
         var ports = DeviceDrivers.ComPorts();
-        return $"Device USB / COM port par nahi mila. {ErrorText(error)}\n\n" +
-               "1. Mini-USB cable device aur PC dono me poori lagi ho aur data wali cable ho (sirf charging wali nahi). Device ON ho.\n" +
-               "2. Device Manager kholkar cable nikaal ke dobara lagayein: 'Ports (COM & LPT)' me naya COM port ya 'ZKTeco USB' " +
-               "device aana chahiye. Kuch na aaye to doosri cable / PC ka doosra USB port try karein; yellow ! aaye to driver " +
-               "install karein (ZKTeco USB Client driver, CP210x ya CH340).\n" +
-               $"3. Device menu → Comm: Device ID = {p.MachineNumber} (software ka Machine No.) aur Comm Key = {p.CommPassword} hona chahiye.\n" +
-               $"4. Is PC par COM ports: {(ports.Length == 0 ? "koi nahi" : string.Join(", ", ports))}.";
+        return $"Device not found on any USB / COM port. {ErrorText(error)}\n\n" +
+               "1. Make sure the Mini-USB cable is fully inserted at both the device and the PC, and that it is a data cable (not charge-only). The device must be ON.\n" +
+               "2. Open Device Manager, then unplug and reconnect the cable: a new COM port under 'Ports (COM & LPT)' or a 'ZKTeco USB' " +
+               "device should appear. If nothing appears, try another cable or another USB port on the PC; if a yellow ! appears, install the " +
+               "driver (ZKTeco USB Client driver, CP210x or CH340).\n" +
+               $"3. On the device menu → Comm: Device ID must be {p.MachineNumber} (the Machine No. in the software) and Comm Key must be {p.CommPassword}.\n" +
+               $"4. COM ports on this PC: {(ports.Length == 0 ? "none" : string.Join(", ", ports))}.";
     }
 
     public Task DisconnectAsync() => _worker.Run(() =>
@@ -293,9 +293,9 @@ public sealed class ZkDevice : IAttendanceDevice
         try { ok = _zk!.StartEnrollEx(enrollNo, fingerIndex, 1); }
         catch { ok = int.TryParse(enrollNo, out int id) && _zk!.StartEnroll(id, fingerIndex); }
         if (!ok)
-            throw new DeviceException("Yeh device software se enroll mode support nahi karta (LX50 jaise models).\n\n" +
-                $"Device par enroll karein: Menu → User Mgt → New User / Edit → AC No {enrollNo} → Fingerprint → finger 3 baar lagayein.\n" +
-                "Uske baad 'Download user info and Fp' dabayein (auto-sync ON ho to kuch minute me apne aap aa jaayega).");
+            throw new DeviceException("This device does not support remote enrollment from the software (e.g. LX50).\n\n" +
+                $"Enroll on the device: Menu → User Mgt → New User / Edit → AC No {enrollNo} → Fingerprint → place the finger 3 times.\n" +
+                "Then click 'Download user info and Fp' (if auto-sync is ON, it is downloaded automatically within a few minutes).");
         try { _zk!.StartIdentify(); } catch { }
     });
 
@@ -328,8 +328,8 @@ public sealed class ZkDevice : IAttendanceDevice
             IsConnected = false;
             try { _zk!.Disconnect(); } catch { }
             if (!TryConnect(Profile))
-                throw new DeviceException("Device se connection toot gaya aur dobara connect nahi hua. " +
-                                          "USB cable aur device power check karke Connect karein.");
+                throw new DeviceException("Connection to the device was lost and could not be restored. " +
+                                          "Check the USB cable and device power, then click Connect.");
             IsConnected = true;
             return op();
         }
@@ -398,16 +398,16 @@ public sealed class ZkDevice : IAttendanceDevice
     /// <summary>zkemkeeper GetLastError codes (Standalone SDK manual).</summary>
     private static string ErrorText(int code) => code switch
     {
-        -1 => "Error -1: SDK initialise nahi hua / connection nahi bana.",
-        -2 => "Error -2: device se data padhne/likhne me error (cable ya port).",
-        -3 => "Error -3: galat data size.",
-        -4 => "Error -4: device me jagah nahi hai.",
-        -5 => "Error -5: data pehle se maujood hai.",
-        -10 => "Error -10: data length galat aayi.",
-        -100 => "Error -100: device ne operation support nahi kiya ya data nahi hai.",
-        0 => "Error 0: data nahi mila / device ne jawab nahi diya.",
-        4 => "Error 4: galat parameter.",
-        101 => "Error 101: buffer allocate nahi hua.",
+        -1 => "Error -1: SDK not initialized / no connection.",
+        -2 => "Error -2: read/write error on the cable or port.",
+        -3 => "Error -3: invalid data size.",
+        -4 => "Error -4: device memory is full.",
+        -5 => "Error -5: data already exists.",
+        -10 => "Error -10: invalid data length.",
+        -100 => "Error -100: operation not supported by the device, or no data.",
+        0 => "Error 0: no data found / the device did not respond.",
+        4 => "Error 4: invalid parameter.",
+        101 => "Error 101: could not allocate buffer.",
         _ => $"Error code: {code}.",
     };
 
@@ -416,9 +416,9 @@ public sealed class ZkDevice : IAttendanceDevice
         var type = Type.GetTypeFromProgID("zkemkeeper.ZKEM") ?? Type.GetTypeFromProgID("zkemkeeper.CZKEM");
         if (type == null)
             throw new DeviceException(
-                "ZKTeco SDK (zkemkeeper.dll) is PC par registered nahi hai.\n\n" +
-                "ZKTeco Standalone SDK download karke 'Register_SDK.bat' (32-bit) Administrator se chalayein, " +
-                "ya: regsvr32 C:\\Windows\\SysWOW64\\zkemkeeper.dll\nDetails README.md me hain.");
+                "The ZKTeco SDK (zkemkeeper.dll) is not registered on this PC.\n\n" +
+                "Download the ZKTeco Standalone SDK and run 'Register_SDK.bat' (32-bit) as Administrator, " +
+                "or run: regsvr32 C:\\Windows\\SysWOW64\\zkemkeeper.dll\nSee README.md for details.");
         return Activator.CreateInstance(type)!;
     }
 
@@ -444,7 +444,7 @@ public sealed class ZkDevice : IAttendanceDevice
 
     private void EnsureConnected()
     {
-        if (!IsConnected || _zk == null) throw new DeviceException("Device connected nahi hai. Pehle Device page se Connect karein.");
+        if (!IsConnected || _zk == null) throw new DeviceException("Device is not connected. Click Connect on the Device page first.");
     }
 
     private int LastError()

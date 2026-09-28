@@ -29,8 +29,8 @@ public class EmployeeWindow : Form
     // Addition
     private readonly ComboBox _dept = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ComboBox _shift = new() { DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly CheckBox _active = new() { Text = "Active (attendance calculate hogi)", AutoSize = true };
-    private readonly CheckBox _enabledOnDevice = new() { Text = "Device par enabled", AutoSize = true, Checked = true };
+    private readonly CheckBox _active = new() { Text = "Active (include in attendance calculation)", AutoSize = true };
+    private readonly CheckBox _enabledOnDevice = new() { Text = "Enabled on device", AutoSize = true, Checked = true };
     private readonly NumericUpDown _salary = new() { Maximum = 100_000_000, DecimalPlaces = 2, ThousandsSeparator = true, Increment = 500 };
     private readonly NumericUpDown _otRate = new() { Maximum = 1_000_000, DecimalPlaces = 2, ThousandsSeparator = true, Increment = 10 };
 
@@ -91,7 +91,7 @@ public class EmployeeWindow : Form
         Bars.Button(bar, "Add", Icons.Get(Icons.Add, Theme.Accent, 20), (_, _) => NewEmployee());
         Bars.Button(bar, "Save", Icons.Get(Icons.Save, Color.FromArgb(40, 90, 160), 20), (_, _) =>
         {
-            if (Save()) Ui.Info($"Save ho gaya: AC No {_current?.EnrollNo} {_current?.Name}\n\nDevice par bhi yeh naam chahiye to 'Upload' dabayein.");
+            if (Save()) Ui.Info($"Saved: AC No {_current?.EnrollNo} {_current?.Name}\n\nClick 'Upload' to send this name to the device as well.");
         });
         Bars.Button(bar, "Delete", Icons.Get(Icons.Close, Color.Red, 20), (_, _) => Delete());
         Bars.Button(bar, "Cancel", Icons.Get(Icons.Undo, Color.FromArgb(30, 100, 210), 20), (_, _) => ShowDetail(_current?.Id));
@@ -243,14 +243,14 @@ public class EmployeeWindow : Form
         Field(p, "OT Rate / Hour (₹)", _otRate, 330, 40, 130, 130);
         p.Controls.Add(new Label
         {
-            Text = "OT rate 0 = salary se apne aap\n(ek ghante ka paisa × OT multiplier, Salary Rule)",
+            Text = "OT rate 0 = calculated from salary\n(one hour's pay × OT multiplier, see Salary Rule)",
             Location = new Point(460, 68), AutoSize = true, ForeColor = Theme.Muted
         });
         _active.Location = new Point(100, y += h + 2);
         p.Controls.Add(_active);
         p.Controls.Add(new Label
         {
-            Text = "Shift se late / early / overtime calculate hota hai. Shift 'Maintenance Timetables' me banayein.",
+            Text = "Late / early / overtime are calculated from the shift. Create shifts in 'Maintenance Timetables'.",
             Location = new Point(100, y + 28), AutoSize = true, ForeColor = Theme.Muted
         });
         return p;
@@ -264,7 +264,7 @@ public class EmployeeWindow : Form
         p.Controls.Add(_enabledOnDevice);
         p.Controls.Add(new Label
         {
-            Text = "Privilege 'Administrator' wala user device ka menu khol sakta hai.\nPassword / Card number device par verify ke liye upload hote hain ('Upload' button).",
+            Text = "A user with the 'Administrator' privilege can open the device menu.\nPassword / Card number are uploaded to the device for verification ('Upload' button).",
             Location = new Point(110, 74), AutoSize = true, ForeColor = Theme.Muted
         });
         return p;
@@ -393,12 +393,12 @@ public class EmployeeWindow : Form
         try
         {
             var enroll = _acNo.Text.Trim();
-            if (enroll.Length == 0 || _name.Text.Trim().Length == 0) { Ui.Info("AC No aur Name zaroori hain."); return false; }
-            if (enroll.Length > 9 || !enroll.All(char.IsDigit)) { Ui.Info("AC No sirf numbers (max 9 digit) — LX50 numeric user ID use karta hai."); return false; }
+            if (enroll.Length == 0 || _name.Text.Trim().Length == 0) { Ui.Info("AC No and Name are required."); return false; }
+            if (enroll.Length > 9 || !enroll.All(char.IsDigit)) { Ui.Info("AC No must be numeric (max. 9 digits) — the LX50 uses numeric user IDs."); return false; }
 
             using var db = new AppDbContext();
             if (db.Employees.Any(x => x.EnrollNo == enroll && x.Id != (_current == null ? 0 : _current.Id)))
-            { Ui.Info($"AC No {enroll} pehle se kisi aur employee ka hai."); return false; }
+            { Ui.Info($"AC No {enroll} is already assigned to another employee."); return false; }
 
             var e = _current == null ? new Employee() : db.Employees.First(x => x.Id == _current.Id);
             var oldEnroll = e.EnrollNo;
@@ -433,7 +433,7 @@ public class EmployeeWindow : Form
     {
         var ids = Ui.SelectedIds(_grid);
         if (ids.Count == 0) return;
-        if (!Ui.Confirm($"Do you want to delete {ids.Count} employee(s)?\n\nLeave records bhi delete honge. Attendance punches database me rahenge.\n(Sirf band karna ho to Addition → Active hata dein.)")) return;
+        if (!Ui.Confirm($"Delete {ids.Count} employee(s)?\n\nTheir leave records will also be deleted; attendance punches stay in the database.\n(To only deactivate an employee, clear Addition → Active instead.)")) return;
         try
         {
             using var db = new AppDbContext();
@@ -455,13 +455,13 @@ public class EmployeeWindow : Form
         {
             var p = DeviceActions.Current();
             bool on = AppState.IsConnected(p.Id);
-            _deviceState.Text = on ? $"Device '{p.Name}' connected." : $"Device '{p.Name}' connected nahi hai. 'Connect Device' dabayein.";
+            _deviceState.Text = on ? $"Device '{p.Name}' connected." : $"Device '{p.Name}' is not connected. Click 'Connect Device'.";
             _deviceState.ForeColor = on ? Theme.Success : Theme.Muted;
             _enroll.Enabled = on;
         }
         catch
         {
-            _deviceState.Text = "Koi device add nahi hai (main window → Device).";
+            _deviceState.Text = "No device has been added (main window → Device).";
             _enroll.Enabled = false;
         }
     }
@@ -477,7 +477,7 @@ public class EmployeeWindow : Form
 
     private async Task Enroll()
     {
-        if (_current == null) { Ui.Info("Pehle employee Save karein, phir finger enroll karein."); return; }
+        if (_current == null) { Ui.Info("Save the employee first, then enroll the finger."); return; }
         var p = DeviceActions.Current();
         var dev = await DeviceActions.Ensure(p);
         dev.Require(DeviceFeatures.RemoteEnroll, "Remote enroll");
@@ -485,8 +485,8 @@ public class EmployeeWindow : Form
         await dev.UploadUsersAsync(SyncService.ToDeviceUsers([_current.Id]).Select(u => { u.Fingers.Clear(); return u; }));
         await dev.StartEnrollAsync(_current.EnrollNo, _finger.SelectedIndex);
         AppState.Log(p.Id, $"Enroll AC No {_current.EnrollNo}, finger {_finger.SelectedIndex}");
-        Ui.Info($"Device enroll mode me hai (AC No {_current.EnrollNo}).\nDevice par '{DeviceDrivers.FingerNames[_finger.SelectedIndex]}' 3 baar lagayein, phir 'Download' dabayein.\n\n" +
-                "Agar LX50 remote enroll support nahi karta, to device menu (User Mgt → Enroll FP) se enroll karke 'Download' karein.");
+        Ui.Info($"The device is in enroll mode (AC No {_current.EnrollNo}).\nPlace the '{DeviceDrivers.FingerNames[_finger.SelectedIndex]}' on the device 3 times, then click 'Download'.\n\n" +
+                "If the LX50 does not support remote enroll, enroll the finger on the device (Menu → User Mgt → user → Fingerprint) and then click 'Download'.");
     }
 
     private void DeleteFinger()
@@ -495,10 +495,10 @@ public class EmployeeWindow : Form
         int f = _finger.SelectedIndex;
         using var db = new AppDbContext();
         int n = db.FingerTemplates.Where(x => x.EmployeeId == _current.Id && x.FingerIndex == f).ExecuteDelete();
-        if (n == 0) { Ui.Info("Is finger ka template saved nahi hai."); return; }
-        Ui.Info("Fingerprint software se delete ho gaya. Device par yeh finger abhi bhi hai: use device menu " +
-                "(User Mgt → user → Fingerprint) se delete karein.\n\n'Del(Device)' + 'Upload' na karein: LX50 par fingerprint " +
-                "upload nahi hota, isliye user ki saari fingers device se chali jaayengi.");
+        if (n == 0) { Ui.Info("No template is saved for this finger."); return; }
+        Ui.Info("Fingerprint deleted from the software. The finger is still on the device: delete it from the device menu " +
+                "(Menu → User Mgt → user → Fingerprint).\n\nDo not use 'Del(Device)' + 'Upload': the LX50 cannot receive fingerprint " +
+                "templates, so all of the user's fingers would be removed from the device.");
         ShowDetail(_current.Id);
     }
 
@@ -509,12 +509,12 @@ public class EmployeeWindow : Form
         if (_current != null && !Save()) return;
         var ids = Ui.SelectedIds(_grid);
         if (ids.Count == 0 && _current != null) ids = [_current.Id];
-        if (ids.Count == 0) { Ui.Info("Pehle employee select karein."); return; }
+        if (ids.Count == 0) { Ui.Info("Select an employee first."); return; }
         try
         {
             UseWaitCursor = true;
             int rejected = await DeviceActions.UploadUsers(DeviceActions.Current(), ids);
-            Ui.Info($"{ids.Count} employee(s) device par upload ho gaye (naam, password, card, fingerprints)." + DeviceActions.RejectedFingersNote(rejected));
+            Ui.Info($"Uploaded {ids.Count} employee(s) to the device (name, password, card, fingerprints)." + DeviceActions.RejectedFingersNote(rejected));
         }
         catch (Exception ex) { Ui.Error(ex); }
         finally { UseWaitCursor = false; }
@@ -525,7 +525,7 @@ public class EmployeeWindow : Form
         try
         {
             var p = DeviceActions.Current();
-            bool overwrite = Ui.Confirm("Software me jo naam pehle se hain, unhe device ke naam se overwrite karein?\n\n(No = sirf naye users aur khali naam update honge)");
+            bool overwrite = Ui.Confirm("Overwrite existing names in the software with the names from the device?\n\n(No = only new users and empty names are updated)");
             UseWaitCursor = true;
             var (added, updated, fingers) = await DeviceActions.DownloadUsers(p, overwrite);
             UseWaitCursor = false;
@@ -538,7 +538,7 @@ public class EmployeeWindow : Form
     private async Task DeleteFromDevice()
     {
         var rows = _grid.SelectedRows.Cast<DataGridViewRow>().Select(r => r.Cells["AC No"].Value?.ToString()).OfType<string>().ToList();
-        if (rows.Count == 0 || !Ui.Confirm($"{rows.Count} user(s) ko DEVICE se delete karein (fingerprints sahit)?\nSoftware me data rahega.")) return;
+        if (rows.Count == 0 || !Ui.Confirm($"Delete {rows.Count} user(s) from the DEVICE (including fingerprints)?\nThe data stays in the software.")) return;
         try
         {
             var p = DeviceActions.Current();
@@ -546,7 +546,7 @@ public class EmployeeWindow : Form
             dev.Require(DeviceFeatures.DeleteUser, "Delete user from device");
             foreach (var r in rows) await dev.DeleteUserAsync(r);
             AppState.Log(p.Id, $"Deleted {rows.Count} user(s) from device");
-            Ui.Info("Device se delete ho gaye.");
+            Ui.Info("Deleted from the device.");
         }
         catch (Exception ex) { Ui.Error(ex); }
     }
@@ -562,9 +562,9 @@ public class EmployeeWindow : Form
             using var src = Image.FromFile(d.FileName);
             _photoBase64 = PhotoStore.Encode(src);
             _photo.Image = PhotoStore.Decode(_photoBase64);
-            Ui.Info("Photo lag gayi. 'Save' ya 'Upload' dabane par database me save hogi.");
+            Ui.Info("Photo loaded. It will be saved to the database when you click 'Save' or 'Upload'.");
         }
-        catch (Exception ex) { Ui.Error(new Exception("Yeh file photo ki tarah nahi khuli: " + ex.Message)); }
+        catch (Exception ex) { Ui.Error(new Exception("This file could not be opened as a photo: " + ex.Message)); }
     }
 
     /// <summary>Exports the employees shown in the grid with the same columns Import reads, so the file can be edited and imported back.</summary>
@@ -586,7 +586,7 @@ public class EmployeeWindow : Form
                     e.JoinDate?.ToString("dd-MM-yyyy"), e.MonthlySalary.ToString("0.00", CultureInfo.InvariantCulture),
                     e.OtRatePerHour.ToString("0.00", CultureInfo.InvariantCulture));
             ExcelExporter.Export(new ReportResult { Title = "Employee List", Subtitle = $"{table.Rows.Count} employees", Table = table }, path);
-            Ui.Info("Export ho gaya: " + path + "\n\nIsi file me badlav karke 'Import' se wapas daal sakte hain.");
+            Ui.Info("Exported: " + path + "\n\nYou can edit this file and load it back with 'Import'.");
         }
         catch (Exception ex) { Ui.Error(ex); }
     }
@@ -604,7 +604,7 @@ public class EmployeeWindow : Form
             using var wb = new XLWorkbook(d.FileName);
             var ws = wb.Worksheets.First();
             var headerRow = ws.RowsUsed().FirstOrDefault(r => r.CellsUsed().Any(c => Norm(c.GetString()) is "acno" or "userid" or "enrollno"));
-            if (headerRow == null) { Ui.Info("Sheet me 'AC No' column nahi mila."); return; }
+            if (headerRow == null) { Ui.Info("No 'AC No' column was found in the sheet."); return; }
             var cols = headerRow.CellsUsed().ToDictionary(c => Norm(c.GetString()), c => c.Address.ColumnNumber);
             int Col(params string[] names) => names.Select(n => cols.GetValueOrDefault(n)).FirstOrDefault(n => n > 0);
             int cAc = Col("acno", "userid", "enrollno"), cName = Col("name"), cNo = Col("no", "badgeno"), cGender = Col("gender"),

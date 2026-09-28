@@ -20,7 +20,7 @@ public class AttendanceLogsPage : PageBase
     private readonly DateTimePicker _from = new() { Format = DateTimePickerFormat.Custom, CustomFormat = "dd-MM-yyyy", Width = 120, Margin = new Padding(0, 4, 8, 0) };
     private readonly DateTimePicker _to = new() { Format = DateTimePickerFormat.Custom, CustomFormat = "dd-MM-yyyy", Width = 120, Margin = new Padding(0, 4, 8, 0) };
     private readonly ComboBox _emp = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 230, Margin = new Padding(0, 4, 8, 0) };
-    private readonly CheckBox _live = new() { Text = $"Live (har {RefreshSeconds} sec device se)", Checked = true, AutoSize = true, Margin = new Padding(4, 6, 8, 0) };
+    private readonly CheckBox _live = new() { Text = $"Live (every {RefreshSeconds} sec from device)", Checked = true, AutoSize = true, Margin = new Padding(4, 6, 8, 0) };
     private readonly Label _count = Ui.Label("", color: Theme.Muted);
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = RefreshSeconds * 1000 };
     private readonly Dictionary<int, (string? base64, Image? thumb)> _thumbs = new();
@@ -39,7 +39,7 @@ public class AttendanceLogsPage : PageBase
         Toolbar.Controls.Add(_to);
         Toolbar.Controls.Add(_emp);
         Toolbar.Controls.Add(Ui.Button("Show", (_, _) => LoadData(force: true), ButtonStyle.Primary));
-        Toolbar.Controls.Add(Ui.Button("Aaj", (_, _) => { _from.Value = _to.Value = DateTime.Today; LoadData(force: true); }));
+        Toolbar.Controls.Add(Ui.Button("Today", (_, _) => { _from.Value = _to.Value = DateTime.Today; LoadData(force: true); }));
         Toolbar.Controls.Add(Ui.Button("＋ Manual Punch", (_, _) => AddManual()));
         Toolbar.Controls.Add(Ui.Button("🗑 Delete", (_, _) => Delete(), ButtonStyle.Danger));
         Toolbar.Controls.Add(Ui.Button("⤓ Excel", (_, _) => Export()));
@@ -133,7 +133,7 @@ public class AttendanceLogsPage : PageBase
             {
                 emps.TryGetValue(a.EnrollNo, out var e);
                 t.Rows.Add(a.Id, Thumb(e), a.PunchTime.ToString("dd-MM-yyyy ddd"), a.PunchTime.ToString("HH:mm:ss"), a.EnrollNo,
-                    e?.Name ?? "(software me nahi)", firsts.Contains(a.Id) ? "IN" : "OUT", Verify(a.VerifyMode), SourceName(a.Source), a.Remark);
+                    e?.Name ?? "(not in software)", firsts.Contains(a.Id) ? "IN" : "OUT", Verify(a.VerifyMode), SourceName(a.Source), a.Remark);
             }
             _grid.DataSource = t;
             UpdateCount(rows.Count);
@@ -151,10 +151,10 @@ public class AttendanceLogsPage : PageBase
             int came = today.Count(r => r.PunchCount > 0);
             int late = today.Count(r => r.LateMinutes > 0);
             int notCome = today.Count(r => r.PunchCount == 0 && r.Status == DayStatus.Absent);
-            text += $"   |   Aaj aaye: {came}   Late: {late}   Nahi aaye: {notCome}";
+            text += $"   |   Present: {came}   Late: {late}   Absent: {notCome}";
         }
         if (ShowsToday && _live.Checked)
-            text += $"   |   Updated {DateTime.Now:HH:mm:ss}" + (AppState.ConnectedCount == 0 ? " (device connected nahi)" : "");
+            text += $"   |   Updated {DateTime.Now:HH:mm:ss}" + (AppState.ConnectedCount == 0 ? " (device not connected)" : "");
         _count.Text = text;
     }
 
@@ -179,13 +179,13 @@ public class AttendanceLogsPage : PageBase
             var time = dlg.AddDateTime("Punch time", DateTime.Today.AddHours(9));
             var state = dlg.AddCombo("Type", ["Check-In", "Check-Out"], "Check-In");
             var remark = dlg.AddText("Reason", "Forgot to punch");
-            dlg.Validator = () => emp.SelectedItem == null ? "Employee chunein." : null;
+            dlg.Validator = () => emp.SelectedItem == null ? "Select an employee." : null;
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
             var e = (Employee)emp.SelectedItem!;
             var t = time.Value;
             t = new DateTime(t.Year, t.Month, t.Day, t.Hour, t.Minute, t.Second);
-            if (db.AttendanceLogs.Any(a => a.EnrollNo == e.EnrollNo && a.PunchTime == t)) { Ui.Info("Is time ka punch pehle se hai."); return; }
+            if (db.AttendanceLogs.Any(a => a.EnrollNo == e.EnrollNo && a.PunchTime == t)) { Ui.Info("A punch already exists at this time."); return; }
             db.AttendanceLogs.Add(new AttendanceLog
             {
                 EnrollNo = e.EnrollNo, PunchTime = t, InOutMode = state.SelectedIndex, Source = PunchSource.Manual,
@@ -201,7 +201,7 @@ public class AttendanceLogsPage : PageBase
     private void Delete()
     {
         var ids = _grid.SelectedRows.Cast<DataGridViewRow>().Select(r => r.Cells["Id"].Value).OfType<long>().ToList();
-        if (ids.Count == 0 || !Ui.Confirm($"{ids.Count} punch(es) delete karein?")) return;
+        if (ids.Count == 0 || !Ui.Confirm($"Delete {ids.Count} punch(es)?")) return;
         try
         {
             using var db = new AppDbContext();
@@ -223,7 +223,7 @@ public class AttendanceLogsPage : PageBase
             copy.Columns.Remove("Id");
             copy.Columns.Remove("Photo");
             ExcelExporter.Export(new ReportResult { Title = "Attendance Punches", Subtitle = $"{_from.Value:dd-MM-yyyy} to {_to.Value:dd-MM-yyyy}", Table = copy }, path);
-            Ui.Info("Export ho gaya: " + path);
+            Ui.Info("Export complete: " + path);
         }
         catch (Exception ex) { Ui.Error(ex); }
     }
@@ -233,5 +233,5 @@ public class AttendanceLogsPage : PageBase
         -1 => "Manual", 0 => "Password", 1 => "Finger", 2 => "Card", 15 => "Face", _ => v.ToString()
     };
 
-    private static string SourceName(PunchSource s) => s switch { PunchSource.Device => "Device", PunchSource.UsbFile => "Pendrive", _ => "Manual" };
+    private static string SourceName(PunchSource s) => s switch { PunchSource.Device => "Device", PunchSource.UsbFile => "USB Drive", _ => "Manual" };
 }

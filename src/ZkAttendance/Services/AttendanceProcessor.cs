@@ -228,7 +228,7 @@ public static class AttendanceProcessor
                     if (pending != null)
                     {
                         rec.PendingLeaveDays = pending.IsHalfDay ? 0.5 : 1;
-                        rec.Remark = Join(rec.Remark, $"{pending.LeaveType?.Code} leave pending (approve nahi hui)");
+                        rec.Remark = Join(rec.Remark, $"{pending.LeaveType?.Code} leave pending approval");
                     }
                 }
             }
@@ -284,7 +284,7 @@ public static class AttendanceProcessor
         var shown = overQuota && rec.PaidLeaveDays == 0 ? "LWP" : code;
         if (!keepStatus) rec.Status = days < 1 ? $"½{shown}" : shown;
         rec.Remark = Join(rec.Remark,
-            overQuota ? $"{code} quota khatam: {days - rec.PaidLeaveDays:0.#} din bina paise (LWP)" :
+            overQuota ? $"{code} quota used up: {days - rec.PaidLeaveDays:0.#} day(s) unpaid (LWP)" :
             days < 1 ? $"Half day {code}" : leave.Reason ?? "");
     }
 

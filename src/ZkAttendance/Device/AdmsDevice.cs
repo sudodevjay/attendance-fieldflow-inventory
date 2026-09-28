@@ -21,16 +21,16 @@ public sealed class AdmsDevice : IAttendanceDevice
     public async Task<DeviceProfile> ConnectAsync(DeviceProfile p, IProgress<string>? progress = null, bool autoDetect = true)
     {
         if (string.IsNullOrWhiteSpace(p.SerialNumber))
-            throw new DeviceException("ADMS device ke liye Serial Number zaroori hai (device menu → System Info → Serial No.).");
+            throw new DeviceException("Serial Number is required for an ADMS device (device menu → System Info → Serial No.).");
         if (!AdmsServer.Running)
-            throw new DeviceException("ADMS server band hai. Database Option me 'ADMS server' ON karein.");
+            throw new DeviceException("ADMS server is off. Turn on 'ADMS server' in Database Option.");
         _profile = p;
         // The device polls on its own schedule; wait briefly for it to show up.
         for (int i = 0; i < 30 && !AdmsServer.IsOnline(p.SerialNumber); i++) await Task.Delay(1000);
         if (!AdmsServer.IsOnline(p.SerialNumber))
-            throw new DeviceException($"Device {p.SerialNumber} ne abhi tak server se contact nahi kiya.\n\n" +
-                $"Device menu → Comm → Cloud Server Setting me Server Address = is PC ka IP, Port = {AdmsServer.Port} set karein " +
-                "aur Windows Firewall me yeh port allow karein.");
+            throw new DeviceException($"Device {p.SerialNumber} has not contacted the server yet.\n\n" +
+                $"On the device menu → Comm → Cloud Server Setting, set Server Address = this PC's IP and Port = {AdmsServer.Port}, " +
+                "and allow this port in Windows Firewall.");
         return p;
     }
 
@@ -42,7 +42,7 @@ public sealed class AdmsDevice : IAttendanceDevice
 
     public Task<DeviceInfo> GetInfoAsync()
     {
-        var s = AdmsServer.Get(Sn) ?? throw new DeviceException("Device online nahi hai.");
+        var s = AdmsServer.Get(Sn) ?? throw new DeviceException("Device is not online.");
         AdmsServer.Enqueue(Sn, "INFO");
         return Task.FromResult(new DeviceInfo(s.SerialNumber, s.Firmware, "ADMS " + s.PushVersion, "ADMS", s.UserCount, 0,
             s.FpCount, s.FaceCount, 0, s.LogCount, null));

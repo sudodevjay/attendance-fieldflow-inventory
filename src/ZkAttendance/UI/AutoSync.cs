@@ -51,7 +51,7 @@ public static class AutoSync
         int m = Minutes;
         _timer.Enabled = m > 0;
         if (m > 0) _timer.Interval = m * 60_000;
-        AppState.Log(0, m > 0 ? $"Auto-sync ON: har {m} minute" : "Auto-sync OFF");
+        AppState.Log(0, m > 0 ? $"Auto-sync ON: every {m} min" : "Auto-sync OFF");
     }
 
     public static async Task RunOnce()
@@ -76,7 +76,7 @@ public static class AutoSync
         try
         {
             if (!AppState.IsConnected(p.Id)) await DeviceActions.Connect(p, quiet: true);
-            if (Failing.Remove(p.Id)) AppState.Log(p.Id, "Auto-sync: device se connection wapas mil gaya");
+            if (Failing.Remove(p.Id)) AppState.Log(p.Id, "Auto-sync: connection to the device restored");
 
             var info = await DeviceActions.RefreshInfo(p.Id);
 
@@ -108,15 +108,15 @@ public static class AutoSync
                 AppDbContext.GetSetting($"AutoSync.{p.Id}.FullWarned") != today)
             {
                 AppDbContext.SetSetting($"AutoSync.{p.Id}.FullWarned", today);
-                AppState.Log(p.Id, $"WARNING: device memory {info.LogCount * 100 / info.LogCapacity}% bhar gayi " +
-                                   $"({info.LogCount}/{info.LogCapacity} logs). Sab download ho chuka hai; right-click → Clear Attendance Logs karein.");
+                AppState.Log(p.Id, $"WARNING: device log memory {info.LogCount * 100 / info.LogCapacity}% full " +
+                                   $"({info.LogCount}/{info.LogCapacity} logs). Everything is downloaded; right-click the device → Clear Attendance Logs.");
             }
         }
         catch (Exception ex)
         {
             AppState.RaiseDeviceStatus();
             if (Failing.Add(p.Id))
-                AppState.Log(p.Id, $"Auto-sync failed: {FirstLine(ex)} (har {Minutes} minute me dobara try hoga)");
+                AppState.Log(p.Id, $"Auto-sync failed: {FirstLine(ex)} (will retry every {Minutes} min)");
         }
     }
 

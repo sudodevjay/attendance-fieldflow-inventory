@@ -78,8 +78,8 @@ public class ReportsPage : PageBase
         var from = _from.Value.Date;
         var to = _to.Value.Date;
         bool range = !sel.monthly && sel.kind is not (ReportKind.DailyAttendance or ReportKind.LeaveBalance);
-        if (range && to < from) { Ui.Info("'To' date 'From' se pehle hai."); return; }
-        if (range && (to - from).TotalDays > 400) { Ui.Info("Maximum 400 din ki report ek baar me."); return; }
+        if (range && to < from) { Ui.Info("The 'To' date is before the 'From' date."); return; }
+        if (range && (to - from).TotalDays > 400) { Ui.Info("A report can cover at most 400 days at a time."); return; }
 
         _result = await Task.Run(() => ReportService.Build(sel.kind, from, to, dept, emp));
         _statusCols.Clear();
@@ -91,7 +91,7 @@ public class ReportsPage : PageBase
 
     private void Export(bool pdf)
     {
-        if (_result == null) { Ui.Info("Pehle 'Generate' dabayein."); return; }
+        if (_result == null) { Ui.Info("Click 'Generate' first."); return; }
         var file = $"{_result.Title.Replace(' ', '_').Replace("/", "")}_{_from.Value:yyyyMMdd}";
         var path = pdf ? Ui.SaveFile("PDF (*.pdf)|*.pdf", file + ".pdf") : Ui.SaveFile("Excel (*.xlsx)|*.xlsx", file + ".xlsx");
         if (path == null) return;
@@ -101,7 +101,7 @@ public class ReportsPage : PageBase
             if (pdf) PdfExporter.Export(_result, path);
             else ExcelExporter.Export(_result, path);
             Cursor = Cursors.Default;
-            if (Ui.Confirm($"File save ho gayi:\n{path}\n\nAbhi kholein?"))
+            if (Ui.Confirm($"File saved:\n{path}\n\nOpen it now?"))
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
         }
         catch (Exception ex) { Cursor = Cursors.Default; Ui.Error(ex); }

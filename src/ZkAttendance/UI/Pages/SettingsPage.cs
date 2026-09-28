@@ -12,25 +12,25 @@ public class SettingsPage : PageBase
     private readonly TextBox _company = new() { Width = 420 };
     private readonly TextBox _address = new() { Width = 420, Multiline = true, Height = 60 };
     private readonly TextBox _conn = new() { Width = 620 };
-    private readonly CheckBox _admsEnabled = new() { Text = "ADMS (Push / Cloud) server chalayein - naye ZKTeco devices khud is PC par attendance bhejenge", AutoSize = true };
+    private readonly CheckBox _admsEnabled = new() { Text = "Run the ADMS (Push / Cloud) server - newer ZKTeco devices send attendance to this PC automatically", AutoSize = true };
     private readonly NumericUpDown _admsPort = new() { Minimum = 1, Maximum = 65535, Value = 8081, Width = 90 };
-    private readonly CheckBox _autoDownload = new() { Text = "App start hone par device se attendance auto-download karein", AutoSize = true };
+    private readonly CheckBox _autoDownload = new() { Text = "Auto-download attendance from the device when the program starts", AutoSize = true };
     private readonly NumericUpDown _syncMinutes = new() { Minimum = 0, Maximum = 1440, Value = AutoSync.DefaultMinutes, Width = 70 };
 
     public SettingsPage()
     {
         var f = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, BackColor = Theme.Card };
 
-        f.Controls.Add(Ui.Label("Company (reports ke header me aayega)", Theme.Title));
+        f.Controls.Add(Ui.Label("Company (shown in the report header)", Theme.Title));
         f.Controls.Add(Ui.Label("Company name", color: Theme.Muted));
         f.Controls.Add(_company);
         f.Controls.Add(Ui.Label("Address", color: Theme.Muted));
         f.Controls.Add(_address);
         f.Controls.Add(_autoDownload);
         var syncRow = new FlowLayoutPanel { AutoSize = true };
-        syncRow.Controls.Add(Ui.Label("Auto-sync: har"));
+        syncRow.Controls.Add(Ui.Label("Auto-sync: every"));
         syncRow.Controls.Add(_syncMinutes);
-        syncRow.Controls.Add(Ui.Label("minute me device se naye punch / users download karein (0 = band)"));
+        syncRow.Controls.Add(Ui.Label("minutes, download new punches / users from the device (0 = off)"));
         f.Controls.Add(syncRow);
         f.Controls.Add(Ui.Button("Save", (_, _) => SaveCompany(), ButtonStyle.Primary));
 
@@ -42,7 +42,7 @@ public class SettingsPage : PageBase
         admsRow.Controls.Add(_admsPort);
         admsRow.Controls.Add(Ui.Button("Save / Restart ADMS", (_, _) => SaveAdms()));
         f.Controls.Add(admsRow);
-        f.Controls.Add(Ui.Label("Device menu → Comm → Cloud Server Setting: Server = is PC ka IP, Port = upar wala port. Windows Firewall me port allow karein.", color: Theme.Muted));
+        f.Controls.Add(Ui.Label("Device menu → Comm → Cloud Server Setting: Server = this PC's IP address, Port = the port above. Allow this port in Windows Firewall.", color: Theme.Muted));
 
         f.Controls.Add(new Label { Height = 20 });
         f.Controls.Add(Ui.Label("Database (SQL Server)", Theme.Title));
@@ -53,7 +53,7 @@ public class SettingsPage : PageBase
         row.Controls.Add(Ui.Button("Save (restart required)", (_, _) => SaveConn()));
         row.Controls.Add(Ui.Button("Backup Database", (_, _) => BackupDatabase(this)));
         f.Controls.Add(row);
-        f.Controls.Add(Ui.Label("Backup file SQL Server machine par save hoti hai (SQL service ko us folder me write permission chahiye).", color: Theme.Muted));
+        f.Controls.Add(Ui.Label("The backup file is saved on the SQL Server computer (the SQL Server service needs write permission to that folder).", color: Theme.Muted));
 
         foreach (Control c in f.Controls) c.Margin = new Padding(0, 4, 0, 4);
         Body.Controls.Add(Ui.Card(f, new Padding(20)));
@@ -95,12 +95,12 @@ public class SettingsPage : PageBase
                 AdmsHost.Start((int)_admsPort.Value);
                 var ips = System.Net.Dns.GetHostAddresses(System.Net.Dns.GetHostName())
                     .Where(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork).Select(a => a.ToString());
-                Ui.Info($"ADMS server port {(int)_admsPort.Value} par chal raha hai.\n\nDevice me Server Address: {string.Join(" / ", ips)}\nPort: {(int)_admsPort.Value}");
+                Ui.Info($"ADMS server is running on port {(int)_admsPort.Value}.\n\nServer Address to enter in the device: {string.Join(" / ", ips)}\nPort: {(int)_admsPort.Value}");
             }
             else
             {
                 AdmsServer.Stop();
-                Ui.Info("ADMS server band kar diya.");
+                Ui.Info("ADMS server stopped.");
             }
         }
         catch (Exception ex) { Ui.Error(ex); }
@@ -121,7 +121,7 @@ public class SettingsPage : PageBase
     {
         DbConfig.ConnectionString = _conn.Text.Trim();
         DbConfig.Save();
-        Ui.Info("Saved. Software band karke dobara kholein.");
+        Ui.Info("Saved. Close and restart the program to apply the change.");
     }
 
     public static void BackupDatabase(IWin32Window owner)

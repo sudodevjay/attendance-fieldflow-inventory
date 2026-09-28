@@ -109,17 +109,17 @@ public class LeavePage : PageBase
             var status = dlg.AddCombo("Status", StatusNames, StatusNames[(int)l.Status]);
             var by = dlg.AddText("Approved / Rejected by", l.ApprovedBy ?? (id == null ? AppDbContext.GetSetting("Leave.LastApprover") : ""));
             var reason = dlg.AddText("Reason / remark", l.Reason, multiline: true);
-            dlg.AddNote("Sirf 'Approved' leave attendance, salary aur quota me ginti hai. 'Pending' wale din tab tak absent maane jaate hain.");
+            dlg.AddNote("Only 'Approved' leave counts for attendance, salary and quota. Days of a 'Pending' leave count as absent until it is approved.");
             void Toggle() => by.Enabled = status.SelectedIndex != (int)LeaveStatus.Pending;
             status.SelectedIndexChanged += (_, _) => Toggle();
             Toggle();
             dlg.Validator = () =>
             {
-                if (emp.SelectedItem == null || type.SelectedItem == null) return "Employee aur leave type chunein.";
-                if (to.Value.Date < from.Value.Date) return "'To' date 'From' se pehle nahi ho sakti.";
-                if (half.Checked && to.Value.Date != from.Value.Date) return "Half day leave sirf ek date ke liye ho sakti hai.";
+                if (emp.SelectedItem == null || type.SelectedItem == null) return "Select an employee and a leave type.";
+                if (to.Value.Date < from.Value.Date) return "The 'To' date cannot be before the 'From' date.";
+                if (half.Checked && to.Value.Date != from.Value.Date) return "A half-day leave can only be for a single date.";
                 if (status.SelectedIndex != (int)LeaveStatus.Pending && string.IsNullOrWhiteSpace(by.Text))
-                    return "Approve / Reject kisne kiya, naam likhein.";
+                    return "Enter the name of the person who approved / rejected it.";
                 return null;
             };
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
@@ -146,9 +146,9 @@ public class LeavePage : PageBase
     private void Decide(LeaveStatus decision)
     {
         var ids = Ui.SelectedIds(_leaves);
-        if (ids.Count == 0) { Ui.Info("Pehle leave select karein."); return; }
+        if (ids.Count == 0) { Ui.Info("Select a leave request first."); return; }
         var word = decision == LeaveStatus.Approved ? "Approve" : "Reject";
-        var by = FormDialog.Prompt(this, $"{word} leave", $"{ids.Count} leave {word.ToLowerInvariant()} karein.\nKisne {word.ToLowerInvariant()} ki (naam)?",
+        var by = FormDialog.Prompt(this, $"{word} leave", $"{word} {ids.Count} leave request(s).\n{(decision == LeaveStatus.Approved ? "Approved" : "Rejected")} by (name)?",
             AppDbContext.GetSetting("Leave.LastApprover"));
         if (string.IsNullOrWhiteSpace(by)) return;
         try
@@ -187,8 +187,8 @@ public class LeavePage : PageBase
         var (quota, taken) = PayrollService.Balance(entry.EmployeeId, type.Id, entry.FromDate.Year, entry.Id);
         double left = Math.Max(0, quota - taken);
         if (days <= left) return true;
-        return Ui.Confirm($"{type.Code} balance: {left:0.#} din (quota {quota:0.#}, pehle li {taken:0.#}).\n" +
-                          $"Is leave ke {days:0.#} din me se {days - left:0.#} din bina paise (LWP) maane jaayenge.\n\nPhir bhi save karein?");
+        return Ui.Confirm($"{type.Code} balance: {left:0.#} day(s) (quota {quota:0.#}, already taken {taken:0.#}).\n" +
+                          $"{days - left:0.#} of the {days:0.#} day(s) of this leave will be unpaid (LWP).\n\nSave anyway?");
     }
 
     private void ExportBalance()
@@ -210,9 +210,9 @@ public class LeavePage : PageBase
             var name = dlg.AddText("Holiday name *", h.Name);
             dlg.Validator = () =>
             {
-                if (string.IsNullOrWhiteSpace(name.Text)) return "Name zaroori hai.";
+                if (string.IsNullOrWhiteSpace(name.Text)) return "Name is required.";
                 using var db2 = new AppDbContext();
-                return db2.Holidays.Any(x => x.Date == date.Value.Date && x.Id != h.Id) ? "Is date par holiday pehle se hai." : null;
+                return db2.Holidays.Any(x => x.Date == date.Value.Date && x.Id != h.Id) ? "A holiday already exists on this date." : null;
             };
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
             h.Date = date.Value.Date;
@@ -233,12 +233,12 @@ public class LeavePage : PageBase
             var dlg = new FormDialog(id == null ? "Add Leave Type" : "Edit Leave Type");
             var code = dlg.AddText("Code * (e.g. CL)", t.Code);
             var name = dlg.AddText("Name *", t.Name);
-            var paid = dlg.AddCheck("Paid", t.IsPaid, "Paid leave (Paid Days me count hogi)");
-            var quota = dlg.AddNumber("Yearly quota (din, 0 = no limit)", (decimal)t.YearlyQuota, 0, 366);
+            var paid = dlg.AddCheck("Paid", t.IsPaid, "Paid leave (counted in Paid Days)");
+            var quota = dlg.AddNumber("Yearly quota (days, 0 = no limit)", (decimal)t.YearlyQuota, 0, 366);
             quota.DecimalPlaces = 1;
             quota.Increment = 0.5m;
-            dlg.AddNote("Quota khatam hone ke baad is type ki leave apne aap bina paise (LWP) gini jaayegi.");
-            dlg.Validator = () => string.IsNullOrWhiteSpace(code.Text) || string.IsNullOrWhiteSpace(name.Text) ? "Code aur Name zaroori hain." : null;
+            dlg.AddNote("When the quota is used up, further leave of this type is counted as unpaid (LWP).");
+            dlg.Validator = () => string.IsNullOrWhiteSpace(code.Text) || string.IsNullOrWhiteSpace(name.Text) ? "Code and Name are required." : null;
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
             t.Code = code.Text.Trim().ToUpperInvariant();
             t.Name = name.Text.Trim();
@@ -254,7 +254,7 @@ public class LeavePage : PageBase
     private void DeleteRows(DataGridView grid, Action<AppDbContext, List<int>> delete)
     {
         var ids = Ui.SelectedIds(grid);
-        if (ids.Count == 0 || !Ui.Confirm($"{ids.Count} record(s) delete karein?")) return;
+        if (ids.Count == 0 || !Ui.Confirm($"Delete {ids.Count} record(s)?")) return;
         try
         {
             using (var db = new AppDbContext()) delete(db, ids);

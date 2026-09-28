@@ -90,7 +90,7 @@ public static class DeviceActions
     public static DeviceProfile Current()
     {
         var all = All();
-        if (all.Count == 0) throw new DeviceException("Koi device add nahi hai. Toolbar se 'Device' par click karke device add karein.");
+        if (all.Count == 0) throw new DeviceException("No device has been added. Click 'Device' on the toolbar to add a device.");
         return all.FirstOrDefault(p => p.Id == AppState.CurrentDeviceId)
                ?? all.FirstOrDefault(p => AppState.IsConnected(p.Id))
                ?? all[0];
@@ -101,7 +101,7 @@ public static class DeviceActions
     {
         var dev = AppState.Device(p);
         if (dev.IsConnected) return;
-        if (!quiet) AppState.Log(p.Id, "Connecting with device.please wait...");
+        if (!quiet) AppState.Log(p.Id, "Connecting to device, please wait...");
         DeviceProfile used;
         try
         {
@@ -109,11 +109,11 @@ public static class DeviceActions
         }
         catch (Exception ex)
         {
-            if (!quiet) AppState.Log(p.Id, "failed in connecting with device");
+            if (!quiet) AppState.Log(p.Id, "Failed to connect to device");
             AppState.RaiseDeviceStatus();
             throw new DeviceException(ex.Message);
         }
-        AppState.Log(p.Id, "Succeed in connecting with device");
+        AppState.Log(p.Id, "Connected to device successfully");
         AutoSync.MarkConnected(p.Id);
         if (used.Kind != p.Kind || used.MachineNumber != p.MachineNumber || used.ComPort != p.ComPort || used.BaudRate != p.BaudRate)
             SaveDetected(used);
@@ -217,15 +217,15 @@ public static class DeviceActions
         var rejected = new Collector();
         await dev.UploadUsersAsync(SyncService.ToDeviceUsers(employeeIds), rejected);
         AppState.Log(p.Id, rejected.Count == 0 ? "Upload user info and FP finished"
-            : $"Upload user info finished; {rejected.Count} fingerprint(s) device ne accept nahi kiye");
+            : $"Upload user info finished; {rejected.Count} fingerprint(s) not accepted by the device");
         try { await RefreshInfo(p.Id); } catch { }
         return rejected.Count;
     }
 
     public static string RejectedFingersNote(int rejected) => rejected == 0 ? "" :
-        $"\n\nNaam / password / card device par update ho gaye. {rejected} fingerprint software se nahi bheje ja sake " +
-        "(yeh device is format ko upload nahi karta). Jo finger device par pehle se enrolled hai woh waisi hi hai; " +
-        "nayi finger device par hi enroll karein.";
+        $"\n\nName / password / card were updated on the device. {rejected} fingerprint(s) could not be sent from the software " +
+        "(this device does not accept this template format). Fingerprints already enrolled on the device are unchanged; " +
+        "enroll new fingers on the device.";
 
     /// <summary>Counts the per-finger "rejected" lines the driver reports during upload (reported synchronously on the device thread).</summary>
     private sealed class Collector : IProgress<string>

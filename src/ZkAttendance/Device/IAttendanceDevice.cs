@@ -78,7 +78,7 @@ public static class DeviceDrivers
     public static void Require(this IAttendanceDevice d, DeviceFeatures f, string what)
     {
         if (!d.Features.HasFlag(f))
-            throw new DeviceException($"'{what}' is device / driver ({d.Driver}) me support nahi hai.");
+            throw new DeviceException($"'{what}' is not supported by this device / driver ({d.Driver}).");
     }
 
     public static readonly string[] FingerNames =

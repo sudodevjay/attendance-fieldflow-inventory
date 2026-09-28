@@ -67,10 +67,10 @@ public static class PayrollService
             totalSalary += salary; totalOt += otAmount; totalNet += net;
 
             var remark = new List<string>();
-            if (e.MonthlySalary == 0) remark.Add("Salary set nahi hai (Employees → Addition)");
-            if (lateCut > 0) remark.Add($"{s.LateCount} late = {Num(lateCut)} din cut");
-            if (s.Leave > s.PaidLeave) remark.Add($"{Num(s.Leave - s.PaidLeave)} din leave bina paise");
-            if (s.PendingLeave > 0) remark.Add($"{Num(s.PendingLeave)} din leave PENDING: approve karein, abhi absent gine");
+            if (e.MonthlySalary == 0) remark.Add("Salary not set (Employees → Addition)");
+            if (lateCut > 0) remark.Add($"{s.LateCount} late = {Num(lateCut)} day(s) deducted");
+            if (s.Leave > s.PaidLeave) remark.Add($"{Num(s.Leave - s.PaidLeave)} day(s) of leave unpaid");
+            if (s.PendingLeave > 0) remark.Add($"{Num(s.PendingLeave)} day(s) of leave PENDING: approve it, counted as absent for now");
 
             t.Rows.Add(s.EnrollNo, s.Name, s.Department, Money(e.MonthlySalary), monthDays, Num(s.PaidDays), s.LateCount,
                 Num(lateCut), Num(payable), Money(Math.Round(perDay, 2)), Money(salary),
@@ -79,7 +79,7 @@ public static class PayrollService
         if (t.Rows.Count > 0)
             t.Rows.Add("", "TOTAL", "", "", "", "", "", "", "", "", Money(totalSalary), "", "", Money(totalOt), Money(totalNet), "");
 
-        var rule = rules.LateCountForHalfDay > 0 ? $"har {rules.LateCountForHalfDay} late = ½ din cut" : "late cut band";
+        var rule = rules.LateCountForHalfDay > 0 ? $"every {rules.LateCountForHalfDay} late = ½ day deducted" : "late deduction off";
         return new ReportResult { Title = title, Subtitle = $"{period}   (Per day = Salary ÷ {monthDays}; {rule}; OT × {rules.OtMultiplier:0.##})", Table = t };
     }
 
@@ -129,7 +129,7 @@ public static class PayrollService
                 .SelectMany(l => AttendanceProcessor.LeaveDays(l, e.Shift, holidays)).Where(x => x.Date.Year == year).Sum(x => x.Days)));
             t.Rows.Add(row.ToArray());
         }
-        return new ReportResult { Title = title, Subtitle = $"Year {year}  (sirf Approved leave; aage ki approved leave bhi shamil hai)", Table = t };
+        return new ReportResult { Title = title, Subtitle = $"Year {year}  (approved leave only, including future approved leave)", Table = t };
     }
 
     /// <summary>Quota and approved days (whole year, planned leave included) of one leave type, for the quota warning.</summary>

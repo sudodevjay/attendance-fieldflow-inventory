@@ -46,7 +46,7 @@ public class FormDialog : Form
         var t = new TextBox { Text = value, Width = 334, Margin = new Padding(0, 10, 0, 6) };
         dlg._layout.Controls.Add(t);
         dlg._layout.SetColumnSpan(t, 2);
-        dlg.Validator = () => string.IsNullOrWhiteSpace(t.Text) ? "Name khali nahi ho sakta." : null;
+        dlg.Validator = () => string.IsNullOrWhiteSpace(t.Text) ? "Name cannot be empty." : null;
         dlg.Shown += (_, _) => { t.Focus(); t.SelectAll(); };
         return dlg.ShowDialog(owner) == DialogResult.OK ? t.Text.Trim() : null;
     }

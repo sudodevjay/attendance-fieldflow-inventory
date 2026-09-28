@@ -25,21 +25,21 @@ public static class AdminDialog
     {
         using var dlg = new FormDialog("Administrator", 360);
         dlg.AddNote(HasPassword
-            ? "Supervisor password badlein. Password khali chhodne par login band ho jayega."
-            : "Supervisor password set karein. Iske baad program kholne par password poocha jayega.");
+            ? "Change the Supervisor password. Leave the password empty to turn off login."
+            : "Set a Supervisor password. The password will then be required when the program starts.");
         var current = HasPassword ? dlg.AddText("Current password") : null;
         var pwd = dlg.AddText("New password");
         var again = dlg.AddText("Confirm password");
         foreach (var t in new[] { current, pwd, again }) if (t != null) t.UseSystemPasswordChar = true;
         dlg.Validator = () =>
         {
-            if (current != null && Hash(current.Text) != AppDbContext.GetSetting(Key)) return "Current password galat hai.";
-            if (pwd.Text != again.Text) return "Dono password same nahi hain.";
+            if (current != null && Hash(current.Text) != AppDbContext.GetSetting(Key)) return "The current password is incorrect.";
+            if (pwd.Text != again.Text) return "The passwords do not match.";
             return null;
         };
         if (dlg.ShowDialog(owner) != DialogResult.OK) return;
         AppDbContext.SetSetting(Key, pwd.Text.Length == 0 ? "" : Hash(pwd.Text));
-        Ui.Info(pwd.Text.Length == 0 ? "Password hata diya gaya." : "Password set ho gaya.");
+        Ui.Info(pwd.Text.Length == 0 ? "Password removed." : "Password set.");
     }
 
     /// <summary>Asks for the password at startup; returns false if the user cancels.</summary>
@@ -59,7 +59,7 @@ public static class AdminDialog
                 Session.UserName = string.IsNullOrWhiteSpace(user.Text) ? "Supervisor" : user.Text.Trim();
                 return true;
             }
-            MessageBox.Show("Password galat hai.", "Login", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("Incorrect password.", "Login", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 }
@@ -71,12 +71,12 @@ public static class AttendanceRuleDialog
     {
         var r = AttendanceRules.Load();
         using var dlg = new FormDialog("Attendance Rule", 440);
-        dlg.AddNote("Late / early grace, half day aur overtime har shift me alag set hote hain (Maintenance Timetables). Yahan company-wide rules hain:");
+        dlg.AddNote("Late / early grace, half day and overtime are set per shift (Maintenance Timetables). These are the company-wide rules:");
         var window = dlg.AddNumber("Punch window starts (hours before shift)", r.WindowBeforeHours, 0, 12);
         var dup = dlg.AddNumber("Ignore repeat punch within (minutes)", r.DuplicateMinutes, 0, 120);
         var single = dlg.AddCombo("Only one punch in a day counts as", ["Present", "Half Day", "Absent"], r.SinglePunch);
-        dlg.AddNote("Example: shift 09:00 aur window 4 ghante = subah 05:00 se agle din 05:00 tak ke punch us din ke maane jaate hain.\n" +
-                    "Repeat punch: agar koi 2 minute me 2 baar finger lagaye to ek hi punch gina jayega.");
+        dlg.AddNote("Example: shift 09:00 and window 4 hours = punches from 05:00 to 05:00 the next day count for that day.\n" +
+                    "Repeat punch: if someone punches twice within 2 minutes, it is counted as one punch.");
         if (dlg.ShowDialog(owner) != DialogResult.OK) return;
         AppDbContext.SetSetting("Rule.WindowBeforeHours", ((int)window.Value).ToString());
         AppDbContext.SetSetting("Rule.DuplicateMinutes", ((int)dup.Value).ToString());
@@ -92,14 +92,14 @@ public static class PayrollRuleDialog
     {
         var r = PayrollRules.Load();
         using var dlg = new FormDialog("Salary Rule", 440);
-        dlg.AddNote("Monthly salary: ek din ka paisa = Salary ÷ mahine ke din. Pay = ek din × (Paid Days − late cut).\n" +
-                    "Salary aur OT rate har employee ke 'Addition' tab me bharein.");
-        var late = dlg.AddNumber("Kitni baar late = ½ din cut (0 = band)", r.LateCountForHalfDay, 0, 31);
-        var ot = dlg.AddNumber("OT multiplier (OT rate 0 wale employees)", r.OtMultiplier, 0, 5);
+        dlg.AddNote("Monthly salary: per day = Salary ÷ days in month. Pay = per day × (Paid Days − late deduction).\n" +
+                    "Enter the salary and OT rate in each employee's 'Addition' tab.");
+        var late = dlg.AddNumber("Late arrivals per ½ day deduction (0 = off)", r.LateCountForHalfDay, 0, 31);
+        var ot = dlg.AddNumber("OT multiplier (for employees with OT rate 0)", r.OtMultiplier, 0, 5);
         ot.DecimalPlaces = 2;
         ot.Increment = 0.5m;
-        dlg.AddNote("Example: late = 3 → mahine me 3 late = ½ din, 6 late = 1 din cut.\n" +
-                    "OT multiplier 1 = ek ghante ka normal paisa, 2 = double. Employee ka apna OT rate ho to wahi lagega.");
+        dlg.AddNote("Example: 3 → 3 late arrivals in a month = ½ day, 6 = 1 day deducted.\n" +
+                    "OT multiplier 1 = normal hourly pay, 2 = double. If the employee has their own OT rate, that rate is used.");
         if (dlg.ShowDialog(owner) != DialogResult.OK) return;
         new PayrollRules((int)late.Value, ot.Value).Save();
         AppState.RaiseDataChanged();
@@ -145,7 +145,7 @@ public class EmployeeScheduleWindow : Form
         var note = new Label
         {
             Dock = DockStyle.Top, Height = 24, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 0, 0),
-            Text = "Employees select karein (Ctrl / Shift se multiple), Shift chunein aur 'Assign' dabayein."
+            Text = "Select employees (Ctrl / Shift for multiple), choose a shift and click 'Assign'."
         };
         Controls.Add(Ui.Card(_grid));
         Controls.Add(note);
@@ -182,12 +182,12 @@ public class EmployeeScheduleWindow : Form
     private void Assign()
     {
         var ids = Ui.SelectedIds(_grid);
-        if (ids.Count == 0) { Ui.Info("Pehle employees select karein."); return; }
+        if (ids.Count == 0) { Ui.Info("Select employees first."); return; }
         int? shiftId = (_shift.SelectedItem as Shift)?.Id;
         using var db = new AppDbContext();
         db.Employees.Where(e => ids.Contains(e.Id)).ExecuteUpdate(s => s.SetProperty(e => e.ShiftId, shiftId));
         LoadGrid();
         AppState.RaiseDataChanged();
-        Ui.Info($"{ids.Count} employee(s) ko shift assign ho gayi.");
+        Ui.Info($"Shift assigned to {ids.Count} employee(s).");
     }
 }

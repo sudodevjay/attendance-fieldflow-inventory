@@ -22,9 +22,9 @@ internal static class Program
             catch (Exception ex)
             {
                 var retry = MessageBox.Show(
-                    $"SQL Server database se connect nahi ho paya:\n\n{ex.GetBaseException().Message}\n\n" +
+                    $"Could not connect to the SQL Server database:\n\n{ex.GetBaseException().Message}\n\n" +
                     $"Connection string:\n{DbConfig.ConnectionString}\n\n" +
-                    "Yes = connection string badlein, No = band karein",
+                    "Yes = change the connection string, No = exit",
                     "Database", MessageBoxButtons.YesNo, MessageBoxIcon.Error);
                 if (retry != DialogResult.Yes) return;
 
