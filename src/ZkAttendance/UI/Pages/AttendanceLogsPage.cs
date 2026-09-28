@@ -14,7 +14,7 @@ public class AttendanceLogsPage : PageBase
     public override string Title => "Attendance Logs (Raw Punches)";
 
     private const int RefreshSeconds = 30;
-    private const int ThumbHeight = 40;
+    private const int ThumbHeight = 80;
 
     private readonly DataGridView _grid = Ui.Grid();
     private readonly DateTimePicker _from = new() { Format = DateTimePickerFormat.Custom, CustomFormat = "dd-MM-yyyy", Width = 120, Margin = new Padding(0, 4, 8, 0) };
@@ -24,7 +24,7 @@ public class AttendanceLogsPage : PageBase
     private readonly Label _count = Ui.Label("", color: Theme.Muted);
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = RefreshSeconds * 1000 };
     private readonly Dictionary<int, (string? base64, Image? thumb)> _thumbs = new();
-    private readonly Image _noPhoto = Icons.Get(Icons.Person, Color.Silver, ThumbHeight - 8);
+    private readonly Image _noPhoto = Icons.Get(Icons.Person, Color.Silver, ThumbHeight - 20);
     /// <summary>Newest punch id and count of the current view, to skip redraws when nothing changed.</summary>
     private (long lastId, int count) _shown = (-1, -1);
     private bool _syncing;
@@ -52,7 +52,8 @@ public class AttendanceLogsPage : PageBase
             if (_grid.Columns["Photo"] is DataGridViewImageColumn photo)
             {
                 photo.ImageLayout = DataGridViewImageCellLayout.Zoom;
-                photo.FillWeight = 30;
+                photo.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+                photo.Width = ThumbHeight + 10;
             }
             if (_grid.Columns["Id"] is { } id) id.Visible = false;
             _grid.ClearSelection();
@@ -127,13 +128,14 @@ public class AttendanceLogsPage : PageBase
 
             var t = new DataTable();
             t.Columns.Add("Id", typeof(long));
+            foreach (var c in new[] { "Date", "Time", "Emp ID", "Name", "IN / OUT" }) t.Columns.Add(c);
             t.Columns.Add("Photo", typeof(Image));
-            foreach (var c in new[] { "Date", "Time", "Emp ID", "Name", "IN / OUT", "Verify", "Source", "Remark" }) t.Columns.Add(c);
+            foreach (var c in new[] { "Verify", "Source", "Remark" }) t.Columns.Add(c);
             foreach (var a in rows)
             {
                 emps.TryGetValue(a.EnrollNo, out var e);
-                t.Rows.Add(a.Id, Thumb(e), a.PunchTime.ToString("dd-MM-yyyy ddd"), a.PunchTime.ToString("HH:mm:ss"), a.EnrollNo,
-                    e?.Name ?? "(not in software)", firsts.Contains(a.Id) ? "IN" : "OUT", Verify(a.VerifyMode), SourceName(a.Source), a.Remark);
+                t.Rows.Add(a.Id, a.PunchTime.ToString("dd-MM-yyyy ddd"), a.PunchTime.ToString("HH:mm:ss"), a.EnrollNo,
+                    e?.Name ?? "(not in software)", firsts.Contains(a.Id) ? "IN" : "OUT", Thumb(e), Verify(a.VerifyMode), SourceName(a.Source), a.Remark);
             }
             _grid.DataSource = t;
             UpdateCount(rows.Count);
