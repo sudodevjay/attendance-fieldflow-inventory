@@ -1,0 +1,2 @@
+# ZKTeco LX50: let the lx50pi service user open the device without root
+SUBSYSTEM=="usb", ATTR{idVendor}=="1b55", ATTR{idProduct}=="0a01", MODE="0660", GROUP="plugdev"

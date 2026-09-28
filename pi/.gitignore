@@ -1,0 +1,7 @@
+# Downloaded installers (large, re-download from official sites)
+tools/*.exe
+tools/install_log.txt
+__pycache__/
+*.db
+# USB recordings contain employee names / punches
+captures/
