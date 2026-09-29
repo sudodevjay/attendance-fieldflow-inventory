@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 User=lx50pi
-Group=plugdev
+SupplementaryGroups=plugdev
 WorkingDirectory=/opt/lx50pi
 ExecStart=/opt/lx50pi/venv/bin/python -m lx50pi -c /etc/lx50pi/config.ini run
 Restart=always

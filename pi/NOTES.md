@@ -59,3 +59,6 @@
   On the Pi: `info` (7/500 users, 31/50000 punches), `users` (7), `logs` (31) and two `once` cycles (31 new, then 0).
 - Next: enable the service (cloud URL empty until the server exists), test the write commands with test user 99,
   cloud server + React page.
+- Service enabled on the Pi (cloud URLs empty = store locally only). Fixed deploy/lx50pi.service: `Group=plugdev`
+  made the service lose its own lx50pi group, so it could not read /etc/lx50pi/config.ini (root:lx50pi 640);
+  now `SupplementaryGroups=plugdev`. Survives a reboot: starts by itself, finds the LX50 through the hub.
