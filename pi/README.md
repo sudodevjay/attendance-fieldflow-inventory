@@ -63,9 +63,9 @@ device 3 times; a fingerprint cannot come from the web page). Each command runs 
 in SQLite until the server has it, invalid fields fail before anything reaches the device. The user list is sent
 to `users_url` whenever it changed, including users added on the device keypad.
 Device limits: 500 users, user id 1-9 digits, name up to 24 bytes, password up to 8 digits, privilege 0 or 14 (admin).
-**The write commands are the standard ZKTeco packets (pyzk) and pass against the simulator, but are not yet
-confirmed on the LX50 itself**: run `capture.ps1 -Mode write` (test user 99 only) and then `lx50pi setuser 99 ...`
-as described in NOTES.md.
+**Tested on the real LX50 (2026-09-29, test user 99):** add, edit and delete work. Starting an enrolment remotely
+does NOT work on the LX50 (the device answers "unknown command"), so fingerprints are enrolled in the device menu;
+`enroll_finger` commands fail with that message.
 
 Test on Windows without the device: `python -m unittest discover -s tests -v` (from this folder).
 Try the CLI against the fake device: `python -m lx50pi simulate` in one window, then in another

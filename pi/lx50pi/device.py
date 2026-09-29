@@ -213,7 +213,12 @@ class Device:
         if not any(u.user_id == user_id for u in self.users()):
             raise DeviceError(f'no user {user_id} on the device')
         self.command(P.CMD_CANCELCAPTURE)
-        self._ok(P.CMD_STARTENROLL, struct.pack('<24sbb', user_id.encode(), finger, 1))
+        r = self.command(P.CMD_STARTENROLL, struct.pack('<24sbb', user_id.encode(), finger, 1))
+        if r.command == P.CMD_ACK_UNKNOWN:
+            # the LX50 (Ver 6.60) answers ACK_UNKNOWN to 61 and 62 in every payload format tried (2026-09-29)
+            raise DeviceError('this device cannot start an enrolment remotely: enrol the finger in the device menu')
+        if r.command != P.CMD_ACK_OK:
+            raise DeviceError(f'enrolment not started: {r.name}')
 
     def cancel_enroll(self):
         self._ok(P.CMD_CANCELCAPTURE)

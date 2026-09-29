@@ -59,6 +59,13 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual([(p.user_id, p.timestamp, p.status, p.punch) for p in punches],
                          [('1', datetime(2026, 9, 28, 8, 52, 51), 1, 0), ('5', datetime(2026, 9, 29, 9, 55, 34), 1, 0)])
 
+    def test_users_skip_freed_slot(self):
+        # after a delete the LX50 reported 7 users but sent 8 records of 72 bytes, the last one all zeros
+        rec = struct.pack('<HB8s24sIx7sx24s', 1, 0, b'123', b'Satyendra', 0, b'1', b'1')
+        body = rec + b'\x00' * 72
+        users = P.parse_users(struct.pack('<I', len(body)) + body, 1)
+        self.assertEqual([(u.uid, u.user_id, u.name) for u in users], [(1, '1', 'Satyendra')])
+
     def test_control_list(self):
         self.assertEqual(_parse_controls('40,01,0000,0000,0a0b; c0,02,0001,0000,8'),
                          [(0x40, 1, 0, 0, b'\x0a\x0b'), (0xC0, 2, 1, 0, 8)])
@@ -118,6 +125,7 @@ class FakeDeviceTests(unittest.TestCase):
             dev.start_enroll('99', 6)
             self.assertEqual(fake.enrolling, ('99', 6))
             self.assertTrue(dev.delete_user('99'))
+            self.assertEqual(fake.freed_slots, 1, 'buffer now has a zero record, as on the real LX50')
             self.assertFalse(dev.delete_user('99'))
             self.assertEqual([x.user_id for x in dev.users()], ['1'])
             with self.assertRaises(DeviceError):

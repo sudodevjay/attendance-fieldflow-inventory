@@ -28,6 +28,7 @@ class FakeDevice:
         self.enabled = True
         self.buffer = b''
         self.enrolling = None  # (user_id, finger) after CMD_STARTENROLL
+        self.freed_slots = 0   # lx50: deleted users still in the user buffer as zero records
         self.bad_checksums = 0
         self.lock = threading.Lock()
 
@@ -39,6 +40,7 @@ class FakeDevice:
     def users_buffer(self):
         body = b''.join(struct.pack('<HB8s24sIx7sx24s', u.uid, u.privilege, u.password.encode(), u.name.encode(),
                                     u.card, b'1', u.user_id.encode()) for u in self.users)
+        body += b'\x00' * 72 * self.freed_slots
         return struct.pack('<I', len(body)) + body
 
     def punches_buffer(self):
@@ -118,6 +120,8 @@ class FakeDevice:
             if not any(u.uid == uid for u in self.users):
                 return [reply(P.CMD_ACK_ERROR, sid, rid)]
             self.users = [u for u in self.users if u.uid != uid]
+            if self.lx50:  # the LX50 keeps sending the freed slot as an all-zero record
+                self.freed_slots += 1
             return ok()
         if p.command == P.CMD_REFRESHDATA:
             return ok()

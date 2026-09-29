@@ -184,12 +184,16 @@ def _cstr(b: bytes) -> str:
 
 
 def parse_users(buf: bytes, count: int):
-    """`buf` is the full CMD_USERTEMP_RRQ buffer: u32 total size + records (28 or 72 bytes each)."""
+    """`buf` is the full CMD_USERTEMP_RRQ buffer: u32 total size + records (28 or 72 bytes each).
+    The record size comes from the buffer, not from `count`: after a delete the LX50 still sends the freed slot as
+    an all-zero record (uid 0, no user id) while its user count is already lower. Such records are skipped."""
     if len(buf) < 4 or count <= 0:
         return []
     total = struct.unpack('<I', buf[:4])[0]
     body = buf[4:4 + total]
     size = total // count
+    if size not in (28, 72):
+        size = next((s for s in (72, 28) if total and total % s == 0), size)
     users = []
     for off in range(0, len(body) - size + 1, size):
         r = body[off:off + size]
@@ -201,6 +205,8 @@ def parse_users(buf: bytes, count: int):
             user_id = _cstr(user_id)
         else:
             raise ValueError(f'unknown user record size {size}')
+        if uid == 0 and user_id in ('', '0'):
+            continue  # freed slot
         users.append(User(uid, user_id, _cstr(name) or f'NN-{user_id}', priv, _cstr(pwd), card))
     return users
 

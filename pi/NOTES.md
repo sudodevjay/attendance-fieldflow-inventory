@@ -62,3 +62,13 @@
 - Service enabled on the Pi (cloud URLs empty = store locally only). Fixed deploy/lx50pi.service: `Group=plugdev`
   made the service lose its own lx50pi group, so it could not read /etc/lx50pi/config.ini (root:lx50pi 640);
   now `SupplementaryGroups=plugdev`. Survives a reboot: starts by itself, finds the LX50 through the hub.
+- Write test on the real LX50 from the Pi (test user 99, service stopped meanwhile):
+  - add `setuser 99 "LX50 Test" --password 4321 --card 1234567`: ACK_OK, read back in slot 8 with all fields. OK
+  - edit `setuser 99 "LX50 Test2" --password 5678 --card 7654321`: same slot, no duplicate, all fields changed. OK
+  - delete `deluser 99`: ACK_OK, count back to 7. OK. The user buffer then still holds the freed slot as an
+    all-zero 72-byte record (7 users, 576 bytes): parse_users now takes the record size from the buffer and skips it.
+  - enrol: CMD_STARTENROLL (61) and CMD_CANCELCAPTURE (62) answer ACK_UNKNOWN in every payload format tried
+    (24s/b/b, <Ib, 9s/b/b). The device keeps working. Remote enrolment is not available on this LX50 over this
+    protocol (maybe the SDK uses another command: `capture.ps1 -Mode write` on Windows would show it); enrol_finger
+    commands now fail with a clear message. Fingerprints are enrolled in the device menu.
+  - Other users untouched throughout; service restarted afterwards.
