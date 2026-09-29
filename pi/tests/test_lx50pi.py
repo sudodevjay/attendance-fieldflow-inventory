@@ -312,12 +312,13 @@ class CommandTests(unittest.TestCase):
             {'id': 'c3', 'type': 'set_user', 'user_id': 'abc', 'name': 'Bad'},
             {'id': 'c4', 'type': 'format_device', 'user_id': '1'},
             {'id': 'c5', 'type': 'enroll_finger', 'user_id': '77'},
+            {'id': 'c7', 'type': 'sync'},
         ]
         self.svc.run_once()
         self.assertIn('device=SIM0000001', self.cloud.gets[-1])
         r = self.cloud.results
         self.assertEqual({k: v['status'] for k, v in r.items()},
-                         {'c1': 'done', 'c2': 'done', 'c3': 'failed', 'c4': 'failed', 'c5': 'failed'})
+                         {'c1': 'done', 'c2': 'done', 'c3': 'failed', 'c4': 'failed', 'c5': 'failed', 'c7': 'done'})
         self.assertEqual(r['c1']['user'], {'user_id': '12', 'name': 'Ravi', 'privilege': 0, 'card': 5})
         self.assertIn('invalid', r['c3']['error'])
         self.assertIn('no user 77', r['c5']['error'])

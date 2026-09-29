@@ -9,3 +9,9 @@ publish/
 
 # Local backups
 *.bak
+
+# Web version
+web/**/node_modules/
+web/client/dist/
+web/server/config.json
+web/**/*.tsbuildinfo

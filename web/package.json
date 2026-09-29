@@ -1,0 +1,14 @@
+{
+  "name": "zk-attendance-web",
+  "private": true,
+  "description": "Web version of the ZK Attendance Manager: React + Tailwind client, Node.js + TypeScript server, same SQL Server database",
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix server start",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "check": "npm --prefix server run check && npm --prefix client run check",
+    "test:e2e": "python test/e2e_api.py && python test/e2e_pi.py && python test/e2e_portal.py && python test/e2e_hr.py"
+  }
+}

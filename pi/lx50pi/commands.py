@@ -12,7 +12,8 @@ office router. The server API is a proposal (like uploader.py); change it here o
           "user": {"user_id": "12", "name": "Ravi", "privilege": 0, "card": 0}}    (user: set_user only)
 
 Command types: set_user (add, or edit when the user id exists; fingerprints stay), delete_user (with its
-fingerprints), enroll_finger (device shows the enrol screen; the person places the finger 3 times).
+fingerprints), enroll_finger (device shows the enrol screen; the person places the finger 3 times; the LX50 does not
+support it), sync (no user_id: read the device and upload new punches and the user list in this cycle).
 Every command runs at most once: its id is stored in SQLite before it runs, and its result is kept there until the
 server accepted it, so an internet outage never loses or repeats a command. Invalid commands fail without touching
 the device. The server should list a command until it received its result.
@@ -29,7 +30,7 @@ from .device import Device, check_user
 
 log = logging.getLogger(__name__)
 
-TYPES = ('set_user', 'delete_user', 'enroll_finger')
+TYPES = ('set_user', 'delete_user', 'enroll_finger', 'sync')
 
 
 class CommandError(Exception):
@@ -75,6 +76,8 @@ def validate(cmd: dict):
     kind = cmd.get('type')
     if kind not in TYPES:
         raise ValueError(f'unknown command type {kind!r}')
+    if kind == 'sync':
+        return
     user_id = cmd.get('user_id')
     if not isinstance(user_id, str):
         raise ValueError('user_id must be a string')
@@ -95,6 +98,8 @@ def _int(cmd, key):
 
 def execute(dev: Device, cmd: dict) -> dict:
     """Run one validated command on a connected device. Returns the extra result fields."""
+    if cmd['type'] == 'sync':
+        return {}  # the service reads the device right after running commands
     kind, user_id = cmd['type'], cmd['user_id']
     if kind == 'set_user':
         u = dev.set_user(user_id, cmd['name'], cmd.get('password') or '', _int(cmd, 'privilege'), _int(cmd, 'card'))

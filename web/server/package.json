@@ -1,0 +1,30 @@
+{
+  "name": "zk-attendance-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web backend of the ZK Attendance Manager: same SQL Server database as the Windows program, plus the API the Raspberry Pi (lx50pi) talks to",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "check": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "msnodesqlv8": "^5.5.0",
+    "mssql": "^12.7.2",
+    "multer": "^2.4.0",
+    "pdfmake": "^0.3.11"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/mssql": "^12.3.0",
+    "@types/multer": "^2.3.0",
+    "@types/node": "^26.6.3",
+    "@types/pdfmake": "^0.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

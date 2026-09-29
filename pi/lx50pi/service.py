@@ -132,7 +132,7 @@ class Service:
                         except (DeviceError, ValueError) as e:
                             res = C.result(self.serial, 'failed', str(e))
                         self.store.finish_command(cmd['id'], res)
-                        log.info('command %s %s %s: %s %s', cmd['id'], cmd['type'], cmd['user_id'],
+                        log.info('command %s %s %s: %s %s', cmd['id'], cmd['type'], cmd.get('user_id', ''),
                                  res['status'], res['error'])
             finally:
                 for cid in self.store.interrupted_commands():  # device unreachable / unplugged mid-way
