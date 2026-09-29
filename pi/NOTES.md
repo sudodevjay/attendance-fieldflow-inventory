@@ -37,3 +37,25 @@
   capture, analyser without descriptors).
 - Next: power-cycle the LX50, re-run `info` / `once` on Windows, then copy the pi folder to the Pi, `install.sh`,
   move the mini-USB cable to the Pi, `lx50pi info`.
+- After the power cycle: `info`, `users`, `logs` and two `once` cycles OK (30 punches stored, second cycle 0 new).
+- User management added (for a React page via a cloud command queue): `Device.set_user / delete_user /
+  start_enroll`, `commands.py`, commands table in SQLite, user list upload, CLI `setuser / deluser / enroll`.
+  Packets are the standard ones (CMD_USER_WRQ 8 with the 72-byte record, CMD_DELETE_USER 18 by slot,
+  CMD_REFRESHDATA 1013, CMD_CANCELCAPTURE 62 + CMD_STARTENROLL 61). 22 tests pass (simulator).
+- NOT yet tested on the LX50 (writing to the device was not run from here). sdk-driver has a `write` mode for this:
+  test user 99 only (stops if 99 exists): add, RefreshData, edit name/password/card, StartEnrollEx + cancel,
+  delete. To confirm, the owner runs as administrator, attendance software closed:
+    1. `powershell -ExecutionPolicy Bypass -File D:\attendance\pi\capture.ps1 -Mode write`
+       then `python analyze\usbpcap_dump.py captures\<folder>`: compare the SDK's packets with lx50pi's.
+    2. `python -m lx50pi setuser 99 "LX50 Test" --password 4321 --card 1234567`, `python -m lx50pi users`,
+       `python -m lx50pi enroll 99` (cancel on the device), `python -m lx50pi deluser 99`, `python -m lx50pi users`.
+- On the Pi (Raspberry Pi 4, Debian 13, housys@housys.local): install.sh run, 22 tests pass there.
+  LX50 plugged in DIRECTLY failed: without its DC power the Pi hit undervoltage; with DC power it still dropped
+  off the bus (error -71, "device not accepting address", connect/disconnect loop). usbmon showed the LX50 firmware
+  answers the language-id request (string 0) with its manufacturer string, then returns garbage for string 2, and
+  drops off ~400 ms after SET_CONFIGURATION. Not fixed by: old_scheme_first, autosuspend=-1, usbcore quirks g/n/d,
+  keeping mtp-probe away (/etc/udev/rules.d/60-lx50-no-mtp.rules left in place, harmless).
+- **Fix: a USB 2.0 hub between Pi and LX50** (Pi -> hub -> LX50, LX50 on its own DC power). Stable, no disconnects.
+  On the Pi: `info` (7/500 users, 31/50000 punches), `users` (7), `logs` (31) and two `once` cycles (31 new, then 0).
+- Next: enable the service (cloud URL empty until the server exists), test the write commands with test user 99,
+  cloud server + React page.

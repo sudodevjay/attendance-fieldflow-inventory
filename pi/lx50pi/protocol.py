@@ -25,6 +25,11 @@ CMD_USERTEMP_RRQ = 9
 CMD_ATTLOG_RRQ = 13
 CMD_GET_FREE_SIZES = 50
 CMD_GET_TIME = 201
+CMD_USER_WRQ = 8
+CMD_DELETE_USER = 18
+CMD_REFRESHDATA = 1013
+CMD_STARTENROLL = 61
+CMD_CANCELCAPTURE = 62
 CMD_PREPARE_DATA = 1500
 CMD_DATA = 1501
 CMD_FREE_DATA = 1502
@@ -42,6 +47,10 @@ CMD_ACK_UNKNOWN = 0xFFFF
 
 FCT_ATTLOG = 1
 FCT_USER = 5
+
+# User privilege values in the 72-byte record
+USER_DEFAULT = 0
+USER_ADMIN = 14
 
 COMMAND_NAMES = {v: k for k, v in globals().items() if k.startswith('CMD_') and isinstance(v, int)}
 
@@ -194,6 +203,18 @@ def parse_users(buf: bytes, count: int):
             raise ValueError(f'unknown user record size {size}')
         users.append(User(uid, user_id, _cstr(name) or f'NN-{user_id}', priv, _cstr(pwd), card))
     return users
+
+
+# Limits of the 72-byte user record; the 22-byte punch record keeps only 9 bytes of the user id
+MAX_USER_ID = 9
+MAX_NAME = 24
+MAX_PASSWORD = 8
+
+
+def pack_user(u: User) -> bytes:
+    """72-byte user record for CMD_USER_WRQ (inverse of parse_users; group '1' as the SDK leaves it)."""
+    return struct.pack('<HB8s24sIx7sx24s', u.uid, u.privilege, u.password.encode(), u.name.encode(), u.card, b'1',
+                       u.user_id.encode())
 
 
 def parse_attendance(buf: bytes, count: int, users_by_uid=None):

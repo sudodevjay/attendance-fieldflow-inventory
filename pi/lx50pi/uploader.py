@@ -7,6 +7,8 @@ Request (the server API is not fixed yet; change here once it is):
     {"device": {"serial": "...", "name": "..."},
      "punches": [{"id": 17, "user_id": "1", "name": "Sid", "time": "2026-09-28T09:01:02",
                   "verify": 1, "state": 0}, ...]}
+The user list goes to a second URL whenever it changed (users added on the device keypad show up too):
+    POST <users_url>   {"device": {...}, "users": [{"user_id": "1", "name": "Sid", "privilege": 0, "card": 0}, ...]}
 Any 2xx reply means every punch in the batch was stored. A batch can be sent again after a network error, so the
 server should treat (serial, user_id, time) as unique and ignore repeats.
 """
@@ -37,8 +39,16 @@ class Uploader:
         }
 
     def send(self, device_sn, rows):
-        body = json.dumps(self.payload(device_sn, rows)).encode()
-        req = urllib.request.Request(self.url, data=body, method='POST',
+        self._post(self.url, self.payload(device_sn, rows))
+
+    def send_users(self, url, device_sn, users):
+        self._post(url, {'device': {'serial': device_sn, 'name': self.device_name},
+                         'users': [{'user_id': u.user_id, 'name': u.name, 'privilege': u.privilege, 'card': u.card}
+                                   for u in users]})
+
+    def _post(self, url, payload):
+        body = json.dumps(payload).encode()
+        req = urllib.request.Request(url, data=body, method='POST',
                                      headers={'Content-Type': 'application/json'})
         if self.token:
             req.add_header('Authorization', 'Bearer ' + self.token)

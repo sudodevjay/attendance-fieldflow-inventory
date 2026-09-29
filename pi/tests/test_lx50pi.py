@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from lx50pi import protocol as P  # noqa: E402
+from lx50pi import commands as C  # noqa: E402
 from lx50pi import simulator  # noqa: E402
 from lx50pi.device import Device, DeviceError  # noqa: E402
 from lx50pi.service import Service, load_config  # noqa: E402
@@ -105,6 +106,33 @@ class FakeDeviceTests(unittest.TestCase):
     def test_lx50_mode(self):
         self.check('udp', lx50=True)
 
+    def test_add_edit_delete_user_and_enroll(self):
+        fake, t = self.make('udp', lx50=True)
+        with Device(t) as dev:
+            u = dev.set_user('99', 'LX50 Test', '4321', P.USER_DEFAULT, 1234567)
+            self.assertEqual(u.uid, 2)                               # first free slot
+            dev.set_user('99', 'LX50 Test2')                          # edit keeps the slot
+            users = {x.user_id: x for x in dev.users()}
+            self.assertEqual((users['99'].uid, users['99'].name, users['99'].password), (2, 'LX50 Test2', ''))
+            self.assertEqual(users['1'].name, 'Sid', 'other users untouched')
+            dev.start_enroll('99', 6)
+            self.assertEqual(fake.enrolling, ('99', 6))
+            self.assertTrue(dev.delete_user('99'))
+            self.assertFalse(dev.delete_user('99'))
+            self.assertEqual([x.user_id for x in dev.users()], ['1'])
+            with self.assertRaises(DeviceError):
+                dev.start_enroll('99')                                # no such user
+        self.assertTrue(fake.enabled)
+
+    def test_bad_user_fields_never_reach_the_device(self):
+        fake, t = self.make('udp')
+        with Device(t) as dev:
+            for args in (('', 'x'), ('12a', 'x'), ('1234567890', 'x'), ('5', ''), ('5', 'x' * 25),
+                         ('5', 'x', '123456789'), ('5', 'x', 'abcd'), ('5', 'x', '', 3)):
+                with self.assertRaises(ValueError, msg=args):
+                    dev.set_user(*args)
+        self.assertEqual([u.user_id for u in fake.users], ['1'])
+
     def test_direct_data_reply(self):
         fake, t = self.make('udp', direct_data=True)
         with Device(t) as dev:
@@ -175,10 +203,26 @@ class ZkUsbTests(unittest.TestCase):
 
 
 class _Cloud(BaseHTTPRequestHandler):
+    # server.queue: commands listed until their result arrives; server.results: {id: result}
+    def do_GET(self):
+        if self.server.fail or not self.path.startswith('/commands?'):
+            self.send_response(503)
+            self.end_headers()
+            return
+        self.server.gets.append(self.path)
+        body = json.dumps({'commands': [c for c in self.server.queue if c['id'] not in self.server.results]}).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-        self.server.requests.append((self.headers.get('Authorization'), body))
         code = 503 if self.server.fail else 200
+        if code == 200 and self.path.startswith('/commands/') and self.path.endswith('/result'):
+            self.server.results[self.path.split('/')[2]] = body
+        elif code == 200:
+            self.server.requests.append((self.headers.get('Authorization'), body))
         self.send_response(code)
         self.end_headers()
 
@@ -193,11 +237,8 @@ class ServiceTests(unittest.TestCase):
         srv, port = simulator.serve(fake, 'udp')
         self.addCleanup(srv.server_close)
         self.addCleanup(srv.shutdown)
-        cloud = HTTPServer(('127.0.0.1', 0), _Cloud)
-        cloud.requests, cloud.fail = [], True
-        threading.Thread(target=cloud.serve_forever, daemon=True).start()
-        self.addCleanup(cloud.server_close)
-        self.addCleanup(cloud.shutdown)
+        cloud = _cloud_server(self)
+        cloud.fail = True
 
         tmp = tempfile.mkdtemp()
         cfg = load_config()
@@ -224,6 +265,84 @@ class ServiceTests(unittest.TestCase):
         n = len(cloud.requests)
         svc.run_once()                                       # nothing new: no read, no upload
         self.assertEqual(len(cloud.requests), n)
+
+
+def _cloud_server(test):
+    cloud = HTTPServer(('127.0.0.1', 0), _Cloud)
+    cloud.requests, cloud.gets, cloud.queue, cloud.results, cloud.fail = [], [], [], {}, False
+    threading.Thread(target=cloud.serve_forever, daemon=True).start()
+    test.addCleanup(cloud.server_close)
+    test.addCleanup(cloud.shutdown)
+    return cloud
+
+
+class CommandTests(unittest.TestCase):
+    def setUp(self):
+        self.fake = simulator.FakeDevice(lx50=True)
+        srv, port = simulator.serve(self.fake, 'udp')
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        self.cloud = _cloud_server(self)
+        base = f'http://127.0.0.1:{self.cloud.server_port}'
+        cfg = load_config()
+        cfg.read_dict({'device': {'transport': 'udp', 'host': '127.0.0.1', 'port': str(port)},
+                       'cloud': {'url': base + '/punches', 'users_url': base + '/users',
+                                 'commands_url': base + '/commands', 'token': 'abc'},
+                       'store': {'path': os.path.join(tempfile.mkdtemp(), 'lx50.db')}})
+        self.svc = Service(cfg)
+        self.addCleanup(self.svc.store.close)
+
+    def users_sent(self):
+        return [[u['user_id'] for u in b['users']] for _, b in self.cloud.requests if 'users' in b]
+
+    def test_commands_run_once_and_report(self):
+        self.svc.run_once()                                   # first cycle learns the serial, sends the users
+        self.assertEqual(self.users_sent(), [['1']])
+        self.cloud.queue += [
+            {'id': 'c1', 'type': 'set_user', 'user_id': '12', 'name': 'Ravi', 'password': '12', 'card': 5},
+            {'id': 'c2', 'type': 'enroll_finger', 'user_id': '12', 'finger': 3},
+            {'id': 'c3', 'type': 'set_user', 'user_id': 'abc', 'name': 'Bad'},
+            {'id': 'c4', 'type': 'format_device', 'user_id': '1'},
+            {'id': 'c5', 'type': 'enroll_finger', 'user_id': '77'},
+        ]
+        self.svc.run_once()
+        self.assertIn('device=SIM0000001', self.cloud.gets[-1])
+        r = self.cloud.results
+        self.assertEqual({k: v['status'] for k, v in r.items()},
+                         {'c1': 'done', 'c2': 'done', 'c3': 'failed', 'c4': 'failed', 'c5': 'failed'})
+        self.assertEqual(r['c1']['user'], {'user_id': '12', 'name': 'Ravi', 'privilege': 0, 'card': 5})
+        self.assertIn('invalid', r['c3']['error'])
+        self.assertIn('no user 77', r['c5']['error'])
+        self.assertEqual(self.fake.enrolling, ('12', 3))
+        self.assertEqual(self.users_sent()[-1], ['1', '12'], 'new user list sent in the same cycle')
+
+        self.cloud.queue.append({'id': 'c6', 'type': 'delete_user', 'user_id': '12'})
+        self.cloud.fail = True                                # internet down: result waits in SQLite
+        with self.assertLogs('lx50pi.service', 'WARNING'):
+            self.svc.run_once()
+        self.cloud.fail = False
+        self.svc.run_once()
+        self.assertEqual(r['c6']['status'], 'done')
+        self.assertEqual([u.user_id for u in self.fake.users], ['1'])
+
+    def test_command_seen_again_is_not_run_again(self):
+        self.svc.run_once()
+        self.cloud.queue.append({'id': 'x1', 'type': 'set_user', 'user_id': '5', 'name': 'Once'})
+        self.svc.run_once()
+        self.fake.users = [u for u in self.fake.users if u.user_id != '5']  # someone deletes it on the keypad
+        del self.cloud.results['x1']                          # server lost the result and lists x1 again
+        self.svc.run_once()
+        self.assertNotIn('5', [u.user_id for u in self.fake.users])
+        self.assertEqual(self.cloud.results['x1']['status'], 'done', 'stored result is sent again')
+
+    def test_validation(self):
+        C.validate({'id': 1, 'type': 'set_user', 'user_id': '1', 'name': 'A', 'privilege': P.USER_ADMIN})
+        for bad in ({'type': 'set_user', 'user_id': 1, 'name': 'A'},
+                    {'type': 'set_user', 'user_id': '1', 'name': 'A', 'card': '5'},
+                    {'type': 'set_user', 'user_id': '1', 'name': 'A', 'privilege': True},
+                    {'type': 'enroll_finger', 'user_id': '1', 'finger': 10}):
+            with self.assertRaises(ValueError, msg=bad):
+                C.validate(bad)
 
 
 def _usbpcap_record(ts, info, addr, ep, kind, data, stage=None):

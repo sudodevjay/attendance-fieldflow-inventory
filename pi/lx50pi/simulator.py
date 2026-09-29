@@ -27,6 +27,7 @@ class FakeDevice:
         self.authed = False
         self.enabled = True
         self.buffer = b''
+        self.enrolling = None  # (user_id, finger) after CMD_STARTENROLL
         self.bad_checksums = 0
         self.lock = threading.Lock()
 
@@ -107,6 +108,26 @@ class FakeDevice:
             out = [reply(P.CMD_PREPARE_DATA, sid, rid, struct.pack('<I', len(chunk)))]
             out += [reply(P.CMD_DATA, sid, rid, chunk[i:i + 1024]) for i in range(0, len(chunk), 1024)]
             return out + ok()
+        if p.command == P.CMD_USER_WRQ:
+            u = P.parse_users(struct.pack('<I', len(p.data)) + p.data, 1)[0]
+            self.users = [x for x in self.users if x.uid != u.uid and x.user_id != u.user_id] + [u]
+            self.users.sort(key=lambda x: x.uid)
+            return ok()
+        if p.command == P.CMD_DELETE_USER:
+            uid = struct.unpack('<H', p.data[:2])[0]
+            if not any(u.uid == uid for u in self.users):
+                return [reply(P.CMD_ACK_ERROR, sid, rid)]
+            self.users = [u for u in self.users if u.uid != uid]
+            return ok()
+        if p.command == P.CMD_REFRESHDATA:
+            return ok()
+        if p.command == P.CMD_CANCELCAPTURE:
+            self.enrolling = None
+            return ok()
+        if p.command == P.CMD_STARTENROLL:
+            user_id, finger, _flag = struct.unpack('<24sbb', p.data[:26])
+            self.enrolling = (user_id.split(b'\x00')[0].decode(), finger)
+            return ok()
         if p.command == P.CMD_FREE_DATA:
             self.buffer = b''
             return ok()

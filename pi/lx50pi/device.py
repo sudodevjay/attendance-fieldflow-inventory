@@ -1,5 +1,6 @@
-"""Device client: connect, read info, users and punches. READ-ONLY: it never writes or clears anything on the device
-(except disabling the keypad while reading, and enabling it again afterwards)."""
+"""Device client: connect, read info, users and punches; add / edit / delete users and start a fingerprint enrolment.
+Punches are never written or cleared. Writes use the standard ZKTeco packets (same as pyzk); on the LX50 over USB
+they are not confirmed by a capture yet (see NOTES.md)."""
 import logging
 import struct
 
@@ -11,6 +12,20 @@ log = logging.getLogger(__name__)
 
 class DeviceError(Exception):
     pass
+
+
+def check_user(user_id, name, password='', privilege=P.USER_DEFAULT, card=0):
+    """Raise ValueError when a field does not fit the device (checked before anything is sent)."""
+    if not user_id or not user_id.isdigit() or len(user_id) > P.MAX_USER_ID:
+        raise ValueError(f'user_id must be 1..{P.MAX_USER_ID} digits')
+    if not name or len(name.encode()) > P.MAX_NAME:
+        raise ValueError(f'name must be 1..{P.MAX_NAME} bytes')
+    if len(password) > P.MAX_PASSWORD or not password.isdigit() and password:
+        raise ValueError(f'password must be up to {P.MAX_PASSWORD} digits')
+    if privilege not in (P.USER_DEFAULT, P.USER_ADMIN):
+        raise ValueError(f'privilege must be {P.USER_DEFAULT} (user) or {P.USER_ADMIN} (admin)')
+    if not 0 <= card <= 0xFFFFFFFF:
+        raise ValueError('card must fit in 32 bits')
 
 
 class Device:
@@ -152,6 +167,56 @@ class Device:
             return []
         by_uid = {u.uid: u.user_id for u in (users or [])}
         return P.parse_attendance(self.read_buffer(P.CMD_ATTLOG_RRQ), sizes.records, by_uid)
+
+    # ---- writes ----------------------------------------------------------------------------------------------
+    def set_user(self, user_id: str, name: str, password: str = '', privilege: int = P.USER_DEFAULT,
+                 card: int = 0) -> P.User:
+        """Add the user, or change it if the user id exists (its fingerprints stay). Returns the user as written."""
+        check_user(user_id, name, password, privilege, card)
+        sizes = self.sizes()
+        self.disable()
+        try:
+            users = self.users(sizes)
+            old = next((u for u in users if u.user_id == user_id), None)
+            if old:
+                uid = old.uid
+            else:
+                if sizes.users_cap and len(users) >= sizes.users_cap:
+                    raise DeviceError(f'device is full ({sizes.users_cap} users)')
+                used = {u.uid for u in users}
+                uid = next(i for i in range(1, P.USHRT_MAX) if i not in used)
+            user = P.User(uid, user_id, name, privilege, password, card)
+            self._ok(P.CMD_USER_WRQ, P.pack_user(user))
+            self._ok(P.CMD_REFRESHDATA)
+        finally:
+            self.enable()
+        return user
+
+    def delete_user(self, user_id: str) -> bool:
+        """Delete the user with its fingerprints. False when the device has no such user."""
+        self.disable()
+        try:
+            old = next((u for u in self.users() if u.user_id == user_id), None)
+            if old is None:
+                return False
+            self._ok(P.CMD_DELETE_USER, struct.pack('<H', old.uid))
+            self._ok(P.CMD_REFRESHDATA)
+        finally:
+            self.enable()
+        return True
+
+    def start_enroll(self, user_id: str, finger: int = 0):
+        """Put the device in enrolment mode for this user; the person then places the finger on the device
+        (3 times). The device stores the template itself. The user must exist."""
+        if not 0 <= finger <= 9:
+            raise ValueError('finger must be 0..9')
+        if not any(u.user_id == user_id for u in self.users()):
+            raise DeviceError(f'no user {user_id} on the device')
+        self.command(P.CMD_CANCELCAPTURE)
+        self._ok(P.CMD_STARTENROLL, struct.pack('<24sbb', user_id.encode(), finger, 1))
+
+    def cancel_enroll(self):
+        self._ok(P.CMD_CANCELCAPTURE)
 
     def read_all(self):
         """Users + punches with the keypad disabled in between (like the SDK does)."""

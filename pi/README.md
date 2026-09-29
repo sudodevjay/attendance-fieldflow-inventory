@@ -43,13 +43,29 @@ receive  ctrl 0xF4 wValue=4             -> bulk IN 0x82: u32 reply length n
 ```
 protocol.py   packets, checksum, time format, user / punch record layouts
 transport.py  USB (pyusb) + UDP/TCP;  USB framing / endpoints / init requests come from config
-device.py     connect, serial, firmware, time, counts, users, punches  (read-only)
-store.py      SQLite buffer: punches stay until the cloud accepts them
-uploader.py   HTTPS POST of punch batches (JSON, Bearer token)
-service.py    loop: every 30 s read the device if the punch count changed, store, upload
+device.py     connect, serial, firmware, time, counts, users, punches; add / edit / delete user, start enrolment
+commands.py   user commands from the cloud (React page -> server queue -> Pi -> LX50) and their results
+store.py      SQLite buffer: punches until the cloud accepts them; commands with their results
+uploader.py   HTTPS POST of punch batches and of the user list (JSON, Bearer token)
+service.py    loop every 15 s: run cloud commands, read the device if the punch count changed, store, upload
 simulator.py  fake device for testing
 ```
-Commands: `python -m lx50pi [-c config.ini] probe | info | users | logs | once | run | simulate`
+Commands: `python -m lx50pi [-c config.ini] probe | info | users | logs | setuser | deluser | enroll | once | run |
+simulate` (`python -m lx50pi -h` shows the arguments).
+
+## User management from a web page
+```
+React page --HTTPS--> cloud server (command queue) <--HTTPS, Pi polls every 15 s-- Pi --USB--> LX50
+```
+The Pi never needs to be reachable from outside. API proposal in the `lx50pi/commands.py` docstring:
+`set_user` (add, or edit when the id exists), `delete_user`, `enroll_finger` (the person then puts the finger on the
+device 3 times; a fingerprint cannot come from the web page). Each command runs at most once, its result is kept
+in SQLite until the server has it, invalid fields fail before anything reaches the device. The user list is sent
+to `users_url` whenever it changed, including users added on the device keypad.
+Device limits: 500 users, user id 1-9 digits, name up to 24 bytes, password up to 8 digits, privilege 0 or 14 (admin).
+**The write commands are the standard ZKTeco packets (pyzk) and pass against the simulator, but are not yet
+confirmed on the LX50 itself**: run `capture.ps1 -Mode write` (test user 99 only) and then `lx50pi setuser 99 ...`
+as described in NOTES.md.
 
 Test on Windows without the device: `python -m unittest discover -s tests -v` (from this folder).
 Try the CLI against the fake device: `python -m lx50pi simulate` in one window, then in another
@@ -65,7 +81,8 @@ driver (`pip install pyusb`). The cloud API (`uploader.py` docstring) is a propo
 3. Run `capture.ps1` as administrator. (done: `captures\20260929_095608`)
 4. `python analyze\usbpcap_dump.py captures\<folder>` and put the suggested values in the config. (done: in
    `deploy\config.example.ini`)
-5. Copy this folder to the Pi and move the LX50's mini-USB cable to the Pi. On the Pi: `sudo sh deploy/install.sh`, then `python -m lx50pi probe` and `info`.
+5. Copy this folder to the Pi and connect the LX50 through a **USB 2.0 hub** (Pi -> hub -> LX50, LX50 on its own
+   DC power). Plugged directly into a Raspberry Pi 4 the LX50 keeps dropping off the bus (see NOTES.md). On the Pi: `sudo sh deploy/install.sh`, then `python -m lx50pi probe` and `info`.
 6. Set the cloud URL / token, `sudo systemctl enable --now lx50pi`.
 
 Status is kept in `NOTES.md`.

@@ -1,4 +1,6 @@
-"""Local SQLite buffer: punches are kept until the cloud accepts them, so nothing is lost when the internet is down."""
+"""Local SQLite buffer: punches are kept until the cloud accepts them, so nothing is lost when the internet is down.
+Cloud commands (commands.py) are recorded before they run, with their result, until the server has the result."""
+import json
 import sqlite3
 from datetime import datetime
 
@@ -23,6 +25,13 @@ CREATE TABLE IF NOT EXISTS users (
     PRIMARY KEY (device_sn, user_id)
 );
 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS commands (
+    id TEXT PRIMARY KEY,           -- the server's command id
+    body TEXT NOT NULL,            -- the command as received (JSON)
+    received_at TEXT NOT NULL,
+    result TEXT,                   -- JSON sent to the server; NULL while running
+    reported_at TEXT
+);
 """
 
 
@@ -63,6 +72,38 @@ class Store:
 
     def count_unsent(self) -> int:
         return self.db.execute('SELECT COUNT(*) FROM punches WHERE sent_at IS NULL').fetchone()[0]
+
+    # ---- cloud commands ----------------------------------------------------------------------------------------
+    def claim_command(self, cmd: dict) -> bool:
+        """Record a command before it runs. False when it was seen before (never run a command twice)."""
+        now = datetime.now().isoformat(timespec='seconds')
+        with self.db:
+            cur = self.db.execute('INSERT OR IGNORE INTO commands (id, body, received_at) VALUES (?,?,?)',
+                                  (str(cmd['id']), json.dumps(cmd), now))
+        return cur.rowcount == 1
+
+    def finish_command(self, command_id, result: dict):
+        with self.db:
+            self.db.execute('UPDATE commands SET result = ? WHERE id = ?', (json.dumps(result), str(command_id)))
+
+    def interrupted_commands(self):
+        """Commands claimed but without a result: the Pi stopped (or lost the device) while running them."""
+        return [r['id'] for r in self.db.execute('SELECT id FROM commands WHERE result IS NULL')]
+
+    def unreported_results(self):
+        return [(r['id'], json.loads(r['result'])) for r in self.db.execute(
+            'SELECT id, result FROM commands WHERE result IS NOT NULL AND reported_at IS NULL ORDER BY received_at')]
+
+    def report_again(self, command_id):
+        """The server listed a finished command again (it lost the result): send the stored result again."""
+        with self.db:
+            self.db.execute('UPDATE commands SET reported_at = NULL WHERE id = ? AND result IS NOT NULL',
+                            (str(command_id),))
+
+    def mark_reported(self, command_id):
+        now = datetime.now().isoformat(timespec='seconds')
+        with self.db:
+            self.db.execute('UPDATE commands SET reported_at = ? WHERE id = ?', (now, str(command_id)))
 
     def get(self, key, default=None):
         row = self.db.execute('SELECT value FROM state WHERE key = ?', (key,)).fetchone()

@@ -1,7 +1,9 @@
 # Records the USB traffic between the ZKTeco SDK and the LX50 while sdk-driver runs read-only commands.
 # Run as administrator (USBPcap needs it). The attendance software must be CLOSED (only one program can use the device).
 #   powershell -ExecutionPolicy Bypass -File D:\attendance\pi\capture.ps1
+#   ... capture.ps1 -Mode write   add / edit / enroll-cancel / delete of TEST user 99 only (stops if 99 exists)
 # Afterwards:  python D:\attendance\pi\analyze\usbpcap_dump.py <the capture folder printed at the end>
+param([ValidateSet('read', 'write')][string]$Mode = 'read')
 $ErrorActionPreference = 'Stop'
 $usbpcap = 'C:\Program Files\USBPcap\USBPcapCMD.exe'
 $driver = 'D:\attendance\pi\sdk-driver\bin\sdk-driver.exe'
@@ -25,7 +27,7 @@ foreach ($h in $hubs) {
 }
 Start-Sleep -Seconds 3
 
-& $driver "$dir\markers.txt"
+if ($Mode -eq 'write') { & $driver "$dir\markers.txt" write } else { & $driver "$dir\markers.txt" }
 $code = $LASTEXITCODE
 Start-Sleep -Seconds 2
 
