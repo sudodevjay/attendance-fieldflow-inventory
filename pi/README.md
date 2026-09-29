@@ -10,7 +10,22 @@ nothing here changes that code.
   `usb_control_msg`, `usb_bulk_write`, `usb_bulk_read`. So the protocol is plain USB control + bulk transfers,
   which Linux libusb / Python `pyusb` can send too.
 - ZKTeco's network protocol (8-byte header: command, checksum, session id, reply id) is already documented by
-  open-source projects such as `pyzk`. The USB protocol may reuse the same packets; the capture will tell.
+  open-source projects such as `pyzk`. **Confirmed (capture 2026-09-29):** the LX50 sends the very same packets
+  over USB.
+
+## LX50 USB protocol (confirmed, tested with lx50pi against the real device)
+Every bulk transfer is announced by a vendor control request on endpoint 0 (bmRequestType 0x40, wIndex 0, no
+data stage). Packets are the same as over UDP (pyzk checksum style).
+```
+send     ctrl 0xF3 wValue=len(packet)   -> bulk OUT 0x03: packet
+         wait 200 ms (the SDK does; asking earlier makes the LX50 stop answering until power off/on)
+receive  ctrl 0xF4 wValue=4             -> bulk IN 0x82: u32 reply length n
+         ctrl 0xF4 wValue=n             -> bulk IN 0x82: reply packet
+```
+- `GET_FREE_SIZES` (50) takes the field index as u32 data and answers one u32 (4 users, 6 fingerprints,
+  8 punches, 14/15/16 capacities: 500 / 500 / 50000).
+- Users: 72-byte records. Punches: 22-byte records `u16 uid, 9s user id, u8 ?, u8 verify, u32 time, u8 state, 4x`.
+- Users / punches are read with `1503` prepare buffer -> `1504` read chunk (answered with `1501` DATA) -> `1502`.
 
 ## Folder
 | Path | What |
@@ -40,17 +55,17 @@ Test on Windows without the device: `python -m unittest discover -s tests -v` (f
 Try the CLI against the fake device: `python -m lx50pi simulate` in one window, then in another
 `python -m lx50pi -c test.ini info` with `[device] transport = udp`.
 
-**Not confirmed until the capture:** whether USB carries the same packets as UDP (`usb_framing = raw`), TCP-framed
-ones (`tcp`), or something else; which endpoints; whether the SDK sends vendor control requests first. The
-analyser prints exactly these values. The cloud API (`uploader.py` docstring) is a proposal until the server exists.
+The USB side is confirmed (see above); on Windows the same code runs against the LX50 through the libusb-win32
+driver (`pip install pyusb`). The cloud API (`uploader.py` docstring) is a proposal until the server exists.
 
 ## Steps
 1. Install USBPcap + Wireshark (`tools\install_tools.bat` as administrator). **Restart the PC** so the USBPcap
    filter driver attaches to the USB hubs. (done)
-2. Connect the LX50 (mini-USB + DC power). Close the attendance software.
-3. Run `capture.ps1` as administrator.
-4. `python analyze\usbpcap_dump.py captures\<folder>` and put the suggested values in the config.
-5. On the Pi: `sudo sh deploy/install.sh`, then `python -m lx50pi probe` and `info`.
+2. Connect the LX50 (mini-USB + DC power). Close the attendance software. (done)
+3. Run `capture.ps1` as administrator. (done: `captures\20260929_095608`)
+4. `python analyze\usbpcap_dump.py captures\<folder>` and put the suggested values in the config. (done: in
+   `deploy\config.example.ini`)
+5. Copy this folder to the Pi and move the LX50's mini-USB cable to the Pi. On the Pi: `sudo sh deploy/install.sh`, then `python -m lx50pi probe` and `info`.
 6. Set the cloud URL / token, `sudo systemctl enable --now lx50pi`.
 
 Status is kept in `NOTES.md`.

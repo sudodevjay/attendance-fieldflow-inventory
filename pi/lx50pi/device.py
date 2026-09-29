@@ -90,7 +90,15 @@ class Device:
         return P.decode_time(struct.unpack('<I', self._ok(P.CMD_GET_TIME).data[:4])[0])
 
     def sizes(self) -> P.Sizes:
-        return P.parse_sizes(self._ok(P.CMD_GET_FREE_SIZES).data)
+        r = self._ok(P.CMD_GET_FREE_SIZES)
+        if len(r.data) >= 80:
+            return P.parse_sizes(r.data)
+        # The LX50 answers 4 bytes: it wants the field index (same numbering as the 80-byte table) per request,
+        # as the SDK does (4 users, 6 fingerprints, 8 punches)
+        f = [0] * 20
+        for i in P.SIZE_FIELDS:
+            f[i] = struct.unpack('<i', self._ok(P.CMD_GET_FREE_SIZES, struct.pack('<I', i)).data[:4])[0]
+        return P.parse_sizes(struct.pack('<20i', *f))
 
     def disable(self):
         self._ok(P.CMD_DISABLEDEVICE)

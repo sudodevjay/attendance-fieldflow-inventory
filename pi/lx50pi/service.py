@@ -11,7 +11,7 @@ from .uploader import Uploader, UploadError
 log = logging.getLogger(__name__)
 
 DEFAULTS = {
-    'device': {'transport': 'usb', 'usb_vid': '1b55', 'usb_pid': '0a01', 'usb_framing': 'raw',
+    'device': {'transport': 'usb', 'usb_vid': '1b55', 'usb_pid': '0a01', 'usb_framing': 'zkusb',
                'password': '0', 'timeout': '5', 'chunk_size': '16384'},
     'poll': {'interval_seconds': '30', 'full_read_minutes': '60'},
     'cloud': {'url': '', 'token': '', 'device_name': '', 'batch_size': '200', 'verify_tls': 'yes'},

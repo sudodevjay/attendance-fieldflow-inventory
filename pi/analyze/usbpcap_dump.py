@@ -6,6 +6,10 @@
 Prints the LX50's transfers in time order with the SDK step markers in between, tries to decode every bulk
 payload as a ZKTeco packet (raw and TCP-framed, both checksum styles), and ends with a summary plus the config
 lines for lx50pi (endpoints, framing, vendor control requests). Standard library only.
+
+When the LX50 was already plugged in before the capture started its descriptors are missing; it is then found by
+its 0xF3 / 0xF4 vendor requests (zkusb framing, see lx50pi/transport.py). USBPcap lists its bulk transfers under
+address 255, so those are taken from the same bus.
 """
 import argparse
 import os
@@ -22,6 +26,7 @@ LINKTYPE_USBPCAP = 249
 TRANSFER = {0: 'ISO', 1: 'INT', 2: 'CTRL', 3: 'BULK'}
 STAGE = {0: 'setup', 1: 'data', 2: 'status', 3: 'complete'}
 LX50 = (0x1B55, 0x0A01)
+ZKUSB_REQUESTS = (0xF3, 0xF4)
 
 
 class Xfer:
@@ -85,6 +90,13 @@ def find_devices(xs):
         if x.kind == 2 and x.response and len(d) >= 18 and d[0] == 18 and d[1] == 1:
             found[(x.file, x.bus, x.addr)] = struct.unpack('<HH', d[8:12])
     return found
+
+
+def find_by_zkusb_requests(xs):
+    """(file, bus, addr) of devices that got the LX50's vendor requests 0x40 / 0xF3 or 0xF4."""
+    return {(x.file, x.bus, x.addr) for x in xs
+            if x.kind == 2 and x.stage == 0 and not x.response and len(x.data) >= 8
+            and x.data[0] == 0x40 and x.data[1] in ZKUSB_REQUESTS}
 
 
 def read_markers(folder, day):
@@ -156,12 +168,19 @@ def main(argv=None):
     for (f, bus, addr), (vid, pid) in sorted(devices.items()):
         print(f'  {f} bus {bus} addr {addr}: {vid:04x}:{pid:04x}' + ('   <-- LX50' if (vid, pid) == LX50 else ''))
     targets = {k for k, v in devices.items() if a.all or v == LX50}
+    if not targets and not a.all:
+        targets = find_by_zkusb_requests(xs)
+        for f, bus, addr in sorted(targets):
+            print(f'  {f} bus {bus} addr {addr}: no descriptor, but 0xF3/0xF4 vendor requests   <-- LX50')
+    if a.all:
+        targets |= {(x.file, x.bus, x.addr) for x in xs}
     if not targets:
         sys.exit('LX50 (1b55:0a01) not found in the capture. Was it plugged in and powered? Try --all.')
 
     day = datetime.fromtimestamp(xs[0].ts) if xs else datetime.now()
     events = [(ts, 'M', text) for ts, text in read_markers(folder, day) if ts]
-    mine = [x for x in xs if (x.file, x.bus, x.addr) in targets]
+    buses = {(f, bus) for f, bus, _ in targets}
+    mine = [x for x in xs if (x.file, x.bus, x.addr) in targets or (x.addr == 255 and (x.file, x.bus) in buses)]
     for x in mine:
         events.append((x.ts, 'X', x))
     events.sort(key=lambda e: (e[0], e[1] != 'M'))
@@ -213,6 +232,10 @@ def main(argv=None):
     outs = [ep for (ep, k) in eps if k == 3 and not ep & 0x80]
     ins = [ep for (ep, k) in eps if k == 3 and ep & 0x80]
     vendor = [s for s in setups if (s[0] >> 5) & 3 == 2]
+    if any(s[0] == 0x40 and s[1] in ZKUSB_REQUESTS for s in vendor):
+        # per-transfer length announcements, not init requests
+        vendor = [s for s in vendor if not (s[0] == 0x40 and s[1] in ZKUSB_REQUESTS)]
+        framings = Counter({'zkusb': sum(framings.values()) or 1})
     print('\nSuggested lx50pi config ([device] section):')
     print('  transport = usb')
     if outs:

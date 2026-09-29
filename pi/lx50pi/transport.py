@@ -86,21 +86,38 @@ class TcpTransport(Transport):
             self.buf += chunk
 
 
+ZKUSB_REQ_TYPE = 0x40  # vendor, host to device, recipient device
+ZKUSB_SEND = 0xF3      # wValue = length of the packet that follows on bulk OUT
+ZKUSB_RECV = 0xF4      # wValue = number of bytes the host reads next on bulk IN
+
+
 class UsbTransport(Transport):
     """LX50 over USB (VID 1B55, PID 0A01, vendor class FF) through libusb / pyusb.
 
-    NOT CONFIRMED YET - the details below are the best guess until the USB capture is analysed:
+    Framing, confirmed from the USB capture of 2026-09-29 (captures/20260929_095608):
+      * 'zkusb' (the LX50): the packets are the same as over UDP, but every bulk transfer is announced with a
+        vendor control request on endpoint 0 (bmRequestType 0x40, wIndex 0, no data stage):
+            send:    ctrl 0xF3, wValue = packet length  ->  bulk OUT 0x03: packet
+            receive: ctrl 0xF4, wValue = 4              ->  bulk IN 0x82: u32 reply length n
+                     ctrl 0xF4, wValue = n              ->  bulk IN 0x82: reply packet
+        The SDK waits about 200 ms after a send before asking for the reply (`reply_delay`). Asking earlier
+        makes the LX50 stop answering on USB until it is powered off and on (tested 2026-09-29), so the delay
+        is never allowed below MIN_REPLY_DELAY.
+      * 'raw' = one packet per bulk transfer, 'tcp' = the TCP frame (50 50 82 7D + length) around each packet;
+        kept for other models, not used by the LX50.
       * endpoints: first bulk OUT and first bulk IN of interface 0 (overridable)
-      * framing:   'raw'  = the same packets as UDP, one packet per bulk transfer
-                   'tcp'  = the TCP frame (50 50 82 7D + length) around each packet
-      * init:      optional control transfers sent after claiming the interface, taken from the capture
+      * init:      optional control transfers sent after claiming the interface (none needed for the LX50)
                    (list of (bmRequestType, bRequest, wValue, wIndex, data_or_length) tuples)
     """
 
-    def __init__(self, vid=0x1B55, pid=0x0A01, framing='raw', ep_out=None, ep_in=None,
-                 interface=0, configuration=1, init_controls=(), read_size=64 * 1024):
+    MIN_REPLY_DELAY = 0.2
+
+    def __init__(self, vid=0x1B55, pid=0x0A01, framing='zkusb', ep_out=None, ep_in=None,
+                 interface=0, configuration=1, init_controls=(), read_size=64 * 1024, reply_delay=0.2):
         self.vid, self.pid = vid, pid
         self.framing = framing
+        self.reply_delay = max(reply_delay, self.MIN_REPLY_DELAY)
+        self.sent_at = 0.0
         self.ep_out_addr, self.ep_in_addr = ep_out, ep_in
         self.interface, self.configuration = interface, configuration
         self.init_controls = list(init_controls)
@@ -144,7 +161,8 @@ class UsbTransport(Transport):
         self.dev = dev
         for req_type, req, value, index, data in self.init_controls:
             dev.ctrl_transfer(req_type, req, value, index, data, timeout=2000)
-        self._drain()
+        if self.framing != 'zkusb':  # zkusb: the device only sends after a 0xF4 request, nothing to drain
+            self._drain()
 
     def _drain(self):
         """Throw away anything the device still had queued from an earlier session."""
@@ -165,10 +183,17 @@ class UsbTransport(Transport):
                 self.dev = None
 
     def send(self, packet):
+        if self.framing == 'zkusb':
+            self._zk_control(ZKUSB_SEND, len(packet))
+            self.ep_out.write(packet, timeout=5000)
+            self.sent_at = time.perf_counter()
+            return
         frame = protocol.tcp_wrap(packet) if self.framing == 'tcp' else packet
         self.ep_out.write(frame, timeout=5000)
 
     def recv(self, timeout):
+        if self.framing == 'zkusb':
+            return self._zk_recv(timeout)
         import usb.core
         deadline = time.monotonic() + timeout
         while True:
@@ -189,6 +214,47 @@ class UsbTransport(Transport):
             except usb.core.USBError as e:
                 raise TransportError(f'USB read failed: {e}')
 
+    # ---- zkusb framing ---------------------------------------------------------------------------------------
+    def _zk_control(self, request, value):
+        import usb.core
+        try:
+            self.dev.ctrl_transfer(ZKUSB_REQ_TYPE, request, value, 0, None, timeout=2000)
+        except usb.core.USBError as e:
+            raise TransportError(f'USB control request {request:#x} failed: {e}')
+
+    def _zk_read(self, n, deadline) -> bytes:
+        import usb.core
+        out = b''
+        while len(out) < n:
+            left_ms = int((deadline - time.monotonic()) * 1000)
+            if left_ms <= 0:
+                raise TransportError('timeout waiting for device')
+            try:
+                out += bytes(self.ep_in.read(n - len(out), timeout=left_ms))
+            except usb.core.USBTimeoutError:
+                raise TransportError('timeout waiting for device')
+            except usb.core.USBError as e:
+                raise TransportError(f'USB read failed: {e}')
+        return out
+
+    def _zk_recv(self, timeout):
+        deadline = time.monotonic() + timeout
+        wait = self.sent_at + self.reply_delay - time.perf_counter()
+        if wait > 0:
+            time.sleep(wait)
+        while True:
+            self._zk_control(ZKUSB_RECV, 4)
+            n = int.from_bytes(self._zk_read(4, deadline), 'little')
+            if n:
+                break
+            if time.monotonic() >= deadline:  # device has nothing yet: ask again shortly
+                raise TransportError('timeout waiting for device')
+            time.sleep(0.05)
+        if n > 0xFFFF:
+            raise TransportError(f'implausible reply length {n}')
+        self._zk_control(ZKUSB_RECV, n)
+        return self._zk_read(n, deadline)
+
 
 def describe_usb(vid=0x1B55, pid=0x0A01) -> str:
     """Human-readable descriptor dump of the device (for `lx50pi probe`)."""
@@ -207,7 +273,8 @@ def from_config(cfg) -> Transport:
     kind = cfg.get('transport', 'usb')
     if kind == 'usb':
         return UsbTransport(vid=int(cfg.get('usb_vid', '1b55'), 16), pid=int(cfg.get('usb_pid', '0a01'), 16),
-                            framing=cfg.get('usb_framing', 'raw'),
+                            framing=cfg.get('usb_framing', 'zkusb'),
+                            reply_delay=float(cfg.get('usb_reply_delay', '0.2')),
                             ep_out=_int_or_none(cfg.get('usb_ep_out')), ep_in=_int_or_none(cfg.get('usb_ep_in')),
                             init_controls=_parse_controls(cfg.get('usb_init_controls', '')))
     host, port = cfg.get('host', '127.0.0.1'), int(cfg.get('port', '4370'))

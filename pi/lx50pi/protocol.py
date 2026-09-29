@@ -1,8 +1,8 @@
 """ZKTeco device protocol: packets, checksum, time format and record layouts.
 
 This is the protocol the ZKTeco SDK speaks over UDP/TCP (documented by open-source projects such as pyzk and
-node-zklib). Whether the LX50 uses the very same packets over USB is not confirmed yet; the USB capture will tell.
-Everything here is transport independent.
+node-zklib). The LX50 uses the very same packets over USB (capture of 2026-09-29); only the framing differs, see
+transport.UsbTransport. Everything here is transport independent.
 
 Packet = 8-byte header + data, all little-endian:
     u16 command, u16 checksum, u16 session_id, u16 reply_id, data...
@@ -141,6 +141,10 @@ class Sizes:
     records_cap: int
 
 
+# Fields of the GET_FREE_SIZES table that parse_sizes uses (the LX50 returns one per request)
+SIZE_FIELDS = (4, 6, 8, 12, 14, 15, 16)
+
+
 def parse_sizes(data: bytes) -> Sizes:
     f = struct.unpack('<20i', data[:80])
     return Sizes(users=f[4], fingers=f[6], records=f[8], cards=f[12],
@@ -193,7 +197,7 @@ def parse_users(buf: bytes, count: int):
 
 
 def parse_attendance(buf: bytes, count: int, users_by_uid=None):
-    """`buf` is the full CMD_ATTLOG_RRQ buffer: u32 total size + records (8, 16 or 40 bytes each)."""
+    """`buf` is the full CMD_ATTLOG_RRQ buffer: u32 total size + records (8, 16, 22 or 40 bytes each)."""
     if len(buf) < 4 or count <= 0:
         return []
     total = struct.unpack('<I', buf[:4])[0]
@@ -209,6 +213,9 @@ def parse_attendance(buf: bytes, count: int, users_by_uid=None):
         elif size == 16:
             user_id, ts, status, punch, _res, _wc = struct.unpack('<IIBB2sI', r)
             uid, user_id = 0, str(user_id)
+        elif size == 22:  # LX50: 9-byte user id (bytes after the NUL are leftovers), verify mode, time, state
+            uid, user_id, _res, status, ts, punch, _sp = struct.unpack('<H9sBBIB4s', r)
+            user_id = _cstr(user_id)
         elif size == 40:
             uid, user_id, status, ts, punch, _sp = struct.unpack('<H24sBIB8s', r)
             user_id = _cstr(user_id)

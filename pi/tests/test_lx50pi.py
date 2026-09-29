@@ -9,6 +9,7 @@ import struct
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -18,6 +19,7 @@ from lx50pi import protocol as P  # noqa: E402
 from lx50pi import simulator  # noqa: E402
 from lx50pi.device import Device, DeviceError  # noqa: E402
 from lx50pi.service import Service, load_config  # noqa: E402
+from lx50pi import transport  # noqa: E402
 from lx50pi.transport import TcpTransport, UdpTransport, _parse_controls  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'analyze'))
@@ -47,6 +49,14 @@ class ProtocolTests(unittest.TestCase):
         log = struct.pack('<HBIB', 3, 1, P.encode_time(t), 1)
         punches = P.parse_attendance(struct.pack('<I', len(log)) + log, 1, {3: '42'})
         self.assertEqual((punches[0].user_id, punches[0].timestamp, punches[0].punch), ('42', t, 1))
+
+    def test_parse_22_byte_logs_from_the_lx50(self):
+        # two records from the capture of 2026-09-29 (user 1 with leftover bytes after the id, user 5)
+        recs = bytes.fromhex('0100310000000900000030000163353a330000000000'
+                             '0500350000000000000000000196953b330000000000')
+        punches = P.parse_attendance(struct.pack('<I', len(recs)) + recs, 2)
+        self.assertEqual([(p.user_id, p.timestamp, p.status, p.punch) for p in punches],
+                         [('1', datetime(2026, 9, 28, 8, 52, 51), 1, 0), ('5', datetime(2026, 9, 29, 9, 55, 34), 1, 0)])
 
     def test_control_list(self):
         self.assertEqual(_parse_controls('40,01,0000,0000,0a0b; c0,02,0001,0000,8'),
@@ -92,10 +102,76 @@ class FakeDeviceTests(unittest.TestCase):
         with self.assertRaises(DeviceError):
             Device(t, password=1).connect()
 
+    def test_lx50_mode(self):
+        self.check('udp', lx50=True)
+
     def test_direct_data_reply(self):
         fake, t = self.make('udp', direct_data=True)
         with Device(t) as dev:
             self.assertEqual(dev.users()[0].name, 'Sid')
+
+
+class _FakeUsb:
+    """pyusb device + endpoints speaking zkusb framing in front of a FakeDevice; checks the request order."""
+    def __init__(self, fake, min_delay):
+        self.fake, self.min_delay = fake, min_delay
+        self.replies, self.announced, self.want, self.sent_at, self.errors = [], None, None, 0.0, []
+
+    def ctrl_transfer(self, rt, req, value, index, data, timeout):
+        if (rt, index, data) != (0x40, 0, None):
+            self.errors.append(f'bad control {rt:#x} {req:#x} {index} {data}')
+        if req == transport.ZKUSB_SEND:
+            self.announced = value
+        elif req == transport.ZKUSB_RECV:
+            if value == 4 and time.perf_counter() - self.sent_at < self.min_delay:
+                self.errors.append('reply requested too early')
+            self.want = value
+        else:
+            self.errors.append(f'unknown request {req:#x}')
+
+    def write(self, packet, timeout):  # bulk OUT
+        if self.announced != len(packet):
+            self.errors.append(f'announced {self.announced}, sent {len(packet)}')
+        self.announced = None
+        self.replies += self.fake.handle(bytes(packet))
+        self.sent_at = time.perf_counter()
+
+    def read(self, n, timeout):  # bulk IN
+        if self.want != n:
+            self.errors.append(f'read {n} without 0xF4 {n}')
+        self.want = None
+        if n == 4:
+            return struct.pack('<I', len(self.replies[0]))
+        return self.replies.pop(0)
+
+
+class ZkUsbTests(unittest.TestCase):
+    def test_framing_against_fake_device(self):
+        fake = simulator.FakeDevice(lx50=True)
+        fake.add_punch('1', datetime(2026, 9, 29, 9, 55, 29))
+        usb = _FakeUsb(fake, 0.02)
+
+        class T(transport.UsbTransport):
+            MIN_REPLY_DELAY = 0.02
+
+            def open(self):
+                self.dev = self.ep_out = self.ep_in = usb
+
+            def close(self):
+                pass
+
+        t = T(reply_delay=0)
+        self.assertEqual(t.reply_delay, 0.02, 'delay is never below the minimum')
+        with Device(t) as dev:
+            self.assertEqual(dev.serial_number(), 'SIM0000001')
+            sizes, users, punches = dev.read_all()
+        self.assertEqual((sizes.users, sizes.records, sizes.users_cap), (1, 1, 1000))
+        self.assertEqual([(p.user_id, p.timestamp) for p in punches], [('1', datetime(2026, 9, 29, 9, 55, 29))])
+        self.assertEqual(usb.errors, [])
+
+    def test_default_delay_is_the_sdk_one(self):
+        self.assertEqual(transport.UsbTransport(reply_delay=0).reply_delay, 0.2)
+        self.assertEqual(transport.from_config({}).framing, 'zkusb')
 
 
 class _Cloud(BaseHTTPRequestHandler):
@@ -183,6 +259,31 @@ class AnalyserTests(unittest.TestCase):
         self.assertIn('CMD_CONNECT sess=0x0000 reply=0 chk=pyzk', text)
         self.assertIn('usb_ep_out = 0x01', text)
         self.assertIn('usb_framing = raw', text)
+
+    def test_finds_lx50_by_zkusb_requests_without_descriptors(self):
+        folder = tempfile.mkdtemp()
+        t = datetime(2026, 9, 29, 9, 56, 14).timestamp()
+        connect = P.build_packet(P.CMD_CONNECT, 0, P.USHRT_MAX - 1)
+        ack = simulator.reply(P.CMD_ACK_OK, 0x1234, 0)
+        setup = lambda req, n: bytes([0x40, req]) + struct.pack('<HHH', n, 0, 0)
+        with open(os.path.join(folder, 'USBPcap1.pcap'), 'wb') as f:
+            f.write(struct.pack('<IHHiIII', 0xA1B2C3D4, 2, 4, 0, 0, 65535, 249))
+            f.write(_usbpcap_record(t, 0, 2, 0x00, 2, setup(0xF3, len(connect)), 0))
+            f.write(_usbpcap_record(t + .001, 0, 255, 0x03, 3, connect))
+            f.write(_usbpcap_record(t + .2, 0, 2, 0x00, 2, setup(0xF4, 4), 0))
+            f.write(_usbpcap_record(t + .201, 1, 255, 0x82, 3, struct.pack('<I', len(ack))))
+            f.write(_usbpcap_record(t + .202, 0, 2, 0x00, 2, setup(0xF4, len(ack)), 0))
+            f.write(_usbpcap_record(t + .203, 1, 255, 0x82, 3, ack))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            usbpcap_dump.main([folder])
+        text = out.getvalue()
+        self.assertIn('0xF3/0xF4 vendor requests   <-- LX50', text)
+        self.assertIn('CMD_CONNECT sess=0x0000 reply=0 chk=pyzk', text)
+        self.assertIn('usb_ep_out = 0x03', text)
+        self.assertIn('usb_ep_in = 0x82', text)
+        self.assertIn('usb_framing = zkusb', text)
+        self.assertNotIn('usb_init_controls', text)
 
 
 if __name__ == '__main__':

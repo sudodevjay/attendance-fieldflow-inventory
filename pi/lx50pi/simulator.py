@@ -1,5 +1,7 @@
 """A fake ZKTeco device on UDP/TCP, so the client, service and cloud upload can be tested without the LX50.
-It answers the same commands the client sends, with 72-byte user records and 40-byte punch records (SSR firmware)."""
+It answers the same commands the client sends, with 72-byte user records and 40-byte punch records (SSR firmware).
+With lx50=True it behaves like the real LX50 (capture of 2026-09-29): 22-byte punch records, and GET_FREE_SIZES
+answers one counter per request."""
 import socketserver
 import struct
 import threading
@@ -14,8 +16,10 @@ def reply(cmd, session_id, reply_id, data=b''):
 
 
 class FakeDevice:
-    def __init__(self, serial='SIM0000001', firmware='Ver 6.60 May 19 2023', password=0, direct_data=False):
+    def __init__(self, serial='SIM0000001', firmware='Ver 6.60 May 19 2023', password=0, direct_data=False,
+                 lx50=False):
         self.serial, self.firmware, self.password = serial, firmware, password
+        self.lx50 = lx50
         self.direct_data = direct_data  # True: small buffers come back as one CMD_DATA reply
         self.users = [P.User(1, '1', 'Sid', 0, '123', 0)]
         self.punches = []
@@ -38,6 +42,10 @@ class FakeDevice:
 
     def punches_buffer(self):
         uid = {u.user_id: u.uid for u in self.users}
+        if self.lx50:
+            body = b''.join(struct.pack('<H9sBBIB4s', uid.get(p.user_id, 0), p.user_id.encode(), 0, p.status,
+                                        P.encode_time(p.timestamp), p.punch, b'') for p in self.punches)
+            return struct.pack('<I', len(body)) + body
         body = b''.join(struct.pack('<H24sBIB8s', uid.get(p.user_id, 0), p.user_id.encode(), p.status,
                                     P.encode_time(p.timestamp), p.punch, b'') for p in self.punches)
         return struct.pack('<I', len(body)) + body
@@ -83,6 +91,9 @@ class FakeDevice:
         if p.command == P.CMD_GET_TIME:
             return ok(struct.pack('<I', P.encode_time(datetime.now().replace(microsecond=0))))
         if p.command == P.CMD_GET_FREE_SIZES:
+            if self.lx50:
+                i = struct.unpack('<I', p.data[:4])[0] if len(p.data) >= 4 else None
+                return ok(self.sizes()[i * 4:i * 4 + 4] if i is not None and i < 20 else b'\x00' * 4)
             return ok(self.sizes())
         if p.command == P.CMD_PREPARE_BUFFER:
             _, command, _fct, _ext = struct.unpack('<bhii', p.data[:11])
