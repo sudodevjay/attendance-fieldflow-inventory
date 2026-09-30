@@ -1,7 +1,7 @@
 /**
  * Administrator login. Two kinds of users:
  *  - the Supervisor password of the Windows program (Maintenance/Options → Administrator): same SHA-256 hash in
- *    AppSettings.AdminPasswordHash; any user name, role Admin. Without a password the administrator program only opens on
+ *    AppSettings.AdminPasswordHash; any user name, role SuperAdmin. Without a password the administrator program only opens on
  *    the server PC itself (see middlewares/auth.middleware).
  *  - users with a role (AdminUsers, web only): own user name and password (scrypt), role Admin / HR / Payroll / Viewer.
  */
@@ -35,7 +35,7 @@ export async function login(user: string, password: string, local: boolean) {
   } else {
     if (!(await hasPassword()) && !local) throw new UserError(NO_PASSWORD_REMOTE, 403);
     if ((await hasPassword()) && hash(password) !== (await getSetting(KEY))) throw new UserError('Incorrect user name or password.', 401);
-    session = { user: name, role: 'Admin', userId: null };
+    session = { user: name, role: 'SuperAdmin', userId: null };
   }
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, { ...session, expires: Date.now() + TTL });

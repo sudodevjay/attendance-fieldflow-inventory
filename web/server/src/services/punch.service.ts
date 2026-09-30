@@ -1,5 +1,6 @@
 /** AC Log: raw punches (newest first, IN / OUT), manual punches, delete, pendrive import (AttendanceLogsPage.cs). */
 import { exec, one, query } from '../config/db';
+import { scopeEnrollNos } from '../utils/scope';
 import { UserError } from '../utils/errors';
 import { addDays, dateOf, fmt, mustParse, parse, sqlDT, today, type DT } from '../utils/time';
 import { process, Status } from './attendance.service';
@@ -20,7 +21,8 @@ async function load(f: PunchFilter) {
       e.Name, e.Id EmployeeId FROM AttendanceLogs a
     LEFT JOIN LATERAL (SELECT x.Name, x.Id FROM Employees x WHERE x.EnrollNo = a.EnrollNo ORDER BY x.Id LIMIT 1) e ON TRUE
     WHERE a.PunchTime >= CAST(@f AS timestamp) AND a.PunchTime < CAST(@t AS timestamp) AND (CAST(@e AS text) IS NULL OR a.EnrollNo = @e)
-    ORDER BY a.PunchTime DESC, a.Id DESC LIMIT 20000`, { f: sqlDT(from), t: sqlDT(to), e: emp?.EnrollNo ?? null });
+    ORDER BY a.PunchTime DESC, a.Id DESC LIMIT 20000`, { f: sqlDT(from), t: sqlDT(to), e: emp?.EnrollNo ?? null })
+    .then((list) => { const s = scopeEnrollNos(); return s ? list.filter((r) => s.has(r.EnrollNo)) : list; });
 
   // First punch of an employee on a day = IN, later ones = OUT (same rule as the attendance calculation).
   const first = new Map<string, { id: number; t: DT }>();

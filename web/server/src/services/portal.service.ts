@@ -10,7 +10,7 @@ import { addDays, addMonths, fmt, make, month, monthStart, mustParse, now, parse
 import { hm, leaveDays, n1, process } from './attendance.service';
 import * as compoff from './compoff.service';
 import * as requests from './employeeRequest.service';
-import { isManager } from './hierarchy.service';
+import { isManager, portalRole } from './hierarchy.service';
 import * as notifications from './notification.service';
 import { getProfile, maskAccount } from './profile.service';
 import { dateText, lateRows, leaveRow, portalEmployee, stats } from './employeeView.service';
@@ -35,6 +35,8 @@ export async function profile(id: number) {
     shift: shift ? shiftLabel(shift) : '', phone: m.Phone ?? '', email: m.Email ?? '', gender: m.Gender ?? '', badgeNo: m.BadgeNo ?? '',
     joinDate: dateText(m.JoinDate), birthDate: dateText(m.BirthDate), address: m.HomeAddress ?? '', photo: m.PhotoBase64,
     isManager: m.IsManager || (await isManager(id)),
+    // Employee / TeamLead / Manager (isManager = has a team: team lead or manager).
+    role: (await portalRole(id)) ?? 'Employee',
     mustChange: m.MustChange, company: await companyName(), office: await officeName(), allowCheckIn: await checkInAllowed(),
     reportingManager: p.ReportingManager,
     // HR profile; the bank account and Aadhaar only with their last digits.

@@ -124,7 +124,9 @@ def main():
         r = call('GET', f'/reports/run?kind=DailyAttendance&from={d_off.isoformat()}&emp={e1}')
         row = row_of(r, '971')
         check(row and 'Worked on weekly off' in row['Remark'] and row['OT'] == '04:00', f"worked on the roster day off counts as OT (break off): {row and row['OT']}")
-        rot_from, rot_to = t + timedelta(days=1), t + timedelta(days=6)
+        # next Monday .. Saturday, so the Sunday off never falls inside the checked days (the check does not depend on today)
+        rot_from = t + timedelta(days=7 - t.weekday())
+        rot_to = rot_from + timedelta(days=5)
         msg = call('POST', '/roster/rotate', {'employeeIds': [e3], 'pattern': [str(sh), str(sh2)], 'from': rot_from.isoformat(), 'to': rot_to.isoformat(),
                                               'everyDays': 2, 'offDays': ['Sunday']})
         check('Rotation saved' in msg.get('message', ''), 'rotation generated')

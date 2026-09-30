@@ -194,10 +194,11 @@ export function Home() {
                     {teamTab === 'leave'
                       ? <div className="text-xs text-slate-500">From : <b>{r.From}</b> &nbsp; To : <b>{r.To}</b><br />Leave type : <b className="text-slate-700">{r.TypeName}</b></div>
                       : <div className="text-xs text-slate-500"><b>{r.TypeName ?? r.Type}</b>: {requestText(r)}<br />{r.Details}</div>}
+                    {r.Stage && <div className="mt-0.5 text-[11px] font-medium text-amber-700">{r.Stage}</div>}
                   </div>
-                  {r.Type === 'Profile' ? <span className="text-xs text-slate-500">HR approves</span> : (
+                  {r.Type === 'Profile' ? <span className="text-xs text-slate-500">HR approves</span> : r.CanDecide === false ? <span className="text-xs text-slate-500">{r.FirstApprovedBy ? 'With the manager' : 'With the team lead'}</span> : (
                     <div className="flex flex-col gap-1">
-                      <Button variant="success" className="px-2 py-1" onClick={() => decide(teamTab === 'leave' ? 'leave' : 'request', r.Id, 'Approved')}>Approve</Button>
+                      <Button variant="success" className="px-2 py-1" onClick={() => decide(teamTab === 'leave' ? 'leave' : 'request', r.Id, 'Approved')}>{r.Step === 'first' ? 'Approve (to manager)' : 'Approve'}</Button>
                       <Button variant="danger" className="px-2 py-1" onClick={() => decide(teamTab === 'leave' ? 'leave' : 'request', r.Id, 'Rejected')}>Reject</Button>
                     </div>
                   )}
@@ -418,12 +419,15 @@ export function TeamRequests() {
               {tab === 'leave'
                 ? <div className="text-xs text-slate-500">{r.TypeName} · {r.From} to {r.To} ({r.Days} day(s)) · {r.Reason}</div>
                 : <div className="text-xs text-slate-500">{r.TypeName ?? r.Type} · {requestText(r)} · {r.Details}</div>}
+              {r.Stage && <div className="mt-0.5 text-[11px] font-medium text-amber-700">{r.Stage}</div>}
+              {r.Status !== 'Pending' && r.FirstApprovedBy && <div className="mt-0.5 text-[11px] text-slate-500">Team lead: {r.FirstApprovedBy}{r.DecidedBy ? ` · decided by ${r.DecidedBy}` : ''}</div>}
             </div>
             {r.HasAttachment && <a className="text-sm text-brand-700 underline" href={`/api/portal/requests/${r.Id}/attachment?token=${ptoken()}`} target="_blank" rel="noreferrer">Receipt</a>}
             <StatusBadge value={r.Status} />
             {r.Status === 'Pending' && r.Type === 'Profile' && <span className="text-xs text-slate-500">HR approves</span>}
-            {r.Status === 'Pending' && r.Type !== 'Profile' && <>
-              <Button variant="success" onClick={() => decide(tab === 'leave' ? 'leave' : 'request', r.Id, 'Approved')}>Approve</Button>
+            {r.Status === 'Pending' && r.Type !== 'Profile' && r.CanDecide === false && <span className="text-xs text-slate-500">{r.FirstApprovedBy ? 'With the manager' : 'With the team lead'}</span>}
+            {r.Status === 'Pending' && r.Type !== 'Profile' && r.CanDecide !== false && <>
+              <Button variant="success" onClick={() => decide(tab === 'leave' ? 'leave' : 'request', r.Id, 'Approved')}>{r.Step === 'first' ? 'Approve (to manager)' : 'Approve'}</Button>
               <Button variant="danger" onClick={() => decide(tab === 'leave' ? 'leave' : 'request', r.Id, 'Rejected')}>Reject</Button>
             </>}
           </div>
@@ -722,7 +726,7 @@ export function Profile() {
         <Avatar me={me} size="size-28" />
         <div className="flex-1">
           <div className="text-2xl font-semibold">{me.name}</div>
-          <div className="text-slate-500">{me.designation || 'Employee'}{me.isManager && ' · Manager'}</div>
+          <div className="text-slate-500">{me.designation || 'Employee'}{me.role === 'TeamLead' ? ' · Team Lead' : me.isManager ? ' · Manager' : ''}</div>
           <div className="mt-4">{dl(rows)}</div>
           <div className="mt-5 flex flex-wrap gap-2">
             <Button icon="edit" variant="primary" disabled={me.pendingProfileChange} onClick={() => setChange(true)}>Request a change</Button>

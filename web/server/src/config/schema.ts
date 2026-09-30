@@ -270,7 +270,17 @@ CREATE TABLE IF NOT EXISTS AdminUsers (
 CREATE TABLE IF NOT EXISTS WebBlobs (
   Key VARCHAR(50) NOT NULL PRIMARY KEY,
   Value TEXT NOT NULL
-)`;
+);
+
+-- Roles (2026-09-30): HOD users see one department (and its sub-departments); employees are Employee / TeamLead /
+-- Manager in the portal; a team lead approves first, the manager decides (FirstApprovedBy = the team lead's step).
+ALTER TABLE AdminUsers ADD COLUMN IF NOT EXISTS DepartmentId INT NULL;
+ALTER TABLE PortalAccounts ADD COLUMN IF NOT EXISTS Role VARCHAR(20) NOT NULL DEFAULT 'Employee';
+ALTER TABLE LeaveEntries ADD COLUMN IF NOT EXISTS FirstApprovedBy VARCHAR(100) NULL;
+ALTER TABLE LeaveEntries ADD COLUMN IF NOT EXISTS FirstApprovedOn TIMESTAMP NULL;
+ALTER TABLE EmployeeRequests ADD COLUMN IF NOT EXISTS FirstApprovedBy VARCHAR(100) NULL;
+ALTER TABLE EmployeeRequests ADD COLUMN IF NOT EXISTS FirstApprovedOn TIMESTAMP NULL;
+UPDATE PortalAccounts SET Role = 'Manager' WHERE IsManager AND Role = 'Employee'`;
 
 /** Seed rows, each only when its table (or row) is still missing. */
 const SEED = `
@@ -291,6 +301,7 @@ export const TABLES = [...SCHEMA.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].
 // Column spelling for results of SELECT * (see config/db).
 registerColumns(SCHEMA.match(/^\s+([A-Z]\w*)\s+[A-Z]/gm)!.map((l) => l.trim().split(/\s+/)[0]));
 registerColumns(TABLES);
+registerColumns(['FirstApprovedBy', 'FirstApprovedOn']);
 
 export async function ensureWebTables() {
   await exec(SCHEMA);

@@ -1,5 +1,6 @@
 /** Leave entries: list, add / edit, approve / reject with the yearly quota warning, delete (LeavePage.cs). */
 import { exec, one, query } from '../config/db';
+import { assertInScope, filterScope } from '../utils/scope';
 import { LEAVE_COLUMNS, LEAVE_STATUS, loadHolidays, toLeave } from '../models';
 import { UserError } from '../utils/errors';
 import { fmt, mustParse, sqlD, today, year, type DT } from '../utils/time';
@@ -18,7 +19,7 @@ export async function list(y: number) {
       LEFT JOIN Employees e ON e.Id = l.EmployeeId LEFT JOIN LeaveTypes t ON t.Id = l.LeaveTypeId
     WHERE l.FromDate <= CAST(@to AS timestamp) AND l.ToDate >= CAST(@from AS timestamp)
     ORDER BY CASE WHEN l.Status = 0 THEN 0 ELSE 1 END, l.FromDate DESC`, { from: `${y}-01-01`, to: `${y}-12-31` });
-  return rows.map((r) => {
+  return filterScope(rows, (r) => r.EmployeeId).map((r) => {
     const l = toLeave(r);
     return {
       Id: l.Id, EmployeeId: l.EmployeeId, LeaveTypeId: l.LeaveTypeId, Status: LEAVE_STATUS[l.Status] ?? String(l.Status),
@@ -26,6 +27,7 @@ export async function list(y: number) {
       FromIso: sqlD(l.FromDate), ToIso: sqlD(l.ToDate), Days: l.IsHalfDay ? 0.5 : (l.ToDate - l.FromDate) / 86_400_000 + 1,
       HalfDay: l.IsHalfDay, AppliedOn: d(l.AppliedOn), AppliedOnIso: l.AppliedOn !== null ? sqlD(l.AppliedOn) : '',
       ApprovedBy: l.ApprovedBy ?? '', DecidedOn: d(l.ApprovedOn), Reason: l.Reason ?? '',
+      FirstApprovedBy: r.FirstApprovedBy ?? '',
     };
   });
 }
@@ -40,7 +42,7 @@ async function quotaWarning(entry: QuotaCheck) {
   if (!q.type || !q.type.IsPaid || q.type.YearlyQuota <= 0) return null;
   if (year(entry.FromDate) !== year(entry.ToDate)) return null;
   const holidays = new Set((await loadHolidays(entry.FromDate, entry.ToDate)).keys());
-  const days = leaveDays({ ...entry, Id: entry.Id ?? 0, Reason: null, Status: 1, AppliedOn: null, ApprovedBy: null, ApprovedOn: null }, q.shift, holidays)
+  const days = leaveDays({ ...entry, Id: entry.Id ?? 0, Reason: null, Status: 1, AppliedOn: null, ApprovedBy: null, ApprovedOn: null, FirstApprovedBy: null, FirstApprovedOn: null }, q.shift, holidays)
     .reduce((a, x) => a + x.days, 0);
   const left = Math.max(0, q.quota - q.taken);
   if (days <= left) return null;
@@ -61,6 +63,8 @@ export async function save(b: LeaveInput): Promise<{ ok: true } | { needsConfirm
   const id = b.Id ? Number(b.Id) : null;
   const emp = Number(b.EmployeeId), type = Number(b.LeaveTypeId);
   if (!emp || !type) throw new UserError('Select an employee and a leave type.');
+  assertInScope(emp);
+  if (id) assertInScope((await one('SELECT EmployeeId FROM LeaveEntries WHERE Id = @id', { id }))?.EmployeeId);
   const from = mustParse(String(b.FromDate)), to = mustParse(String(b.ToDate));
   if (to < from) throw new UserError("The 'To' date cannot be before the 'From' date.");
   const half = !!b.IsHalfDay;
@@ -101,6 +105,7 @@ export async function decide(ids: number[], approve: boolean, by: string, confir
   if (!by) throw new UserError(`Enter who ${approve ? 'approved' : 'rejected'} it.`);
   const ok = new Set(confirmed);
   const rows = await query(`SELECT ${LEAVE_COLUMNS} FROM LeaveEntries l WHERE l.Id = ANY(@ids)`, { ids });
+  for (const r of rows) assertInScope(r.EmployeeId);
   const warnings: { id: number; text: string }[] = [];
   let changed = 0;
   for (const r of rows) {
@@ -121,6 +126,7 @@ export async function decide(ids: number[], approve: boolean, by: string, confir
 }
 
 export async function removeMany(ids: number[]) {
+  for (const r of await query('SELECT EmployeeId FROM LeaveEntries WHERE Id = ANY(@ids)', { ids })) assertInScope(r.EmployeeId);
   await exec('DELETE FROM LeaveEntries WHERE Id = ANY(@ids)', { ids });
 }
 

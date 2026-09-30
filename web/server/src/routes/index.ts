@@ -1,7 +1,7 @@
 /** All of /api. Public first (admin login, Raspberry Pi, employee portal), then everything behind the administrator login. */
 import { Router } from 'express';
 import { me } from '../controllers/hr.controller';
-import { auditTrail, authorize, requireAdmin } from '../middlewares/auth.middleware';
+import { auditTrail, authorize, requireAdmin, withScope } from '../middlewares/auth.middleware';
 import { portalCors } from '../middlewares/cors.middleware';
 import { notFound } from '../middlewares/error.middleware';
 import { authRoutes } from './auth.routes';
@@ -35,6 +35,7 @@ api.use('/wifisetup', wifiSetupRoutes);
 api.use(requireAdmin);
 api.get('/auth/me', me);
 api.use(authorize);
+api.use(withScope);
 api.use(auditTrail((req) => req.user ?? '?', (req) => req.role ?? null));
 api.use('/dashboard', dashboardRoutes);
 api.use('/departments', departmentRoutes);

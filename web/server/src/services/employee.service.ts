@@ -2,6 +2,7 @@
 import { exec, one, query, transaction } from '../config/db';
 import { byEnroll, EMPLOYEE_COLUMNS, toEmployee } from '../models';
 import { UserError } from '../utils/errors';
+import { assertInScope, filterScope } from '../utils/scope';
 import { withChildren } from './department.service';
 import * as documents from './document.service';
 import { getProfile, removeProfiles, saveProfile } from './profile.service';
@@ -13,14 +14,14 @@ export async function list(departmentId: number | null, includeSub: boolean, sea
   const rows = await query(`SELECT e.Id, e.EnrollNo, e.BadgeNo, e.Name, e.Gender, e.Designation, e.Phone, e.DepartmentId,
       d.Name Department, e.IsActive FROM Employees e LEFT JOIN Departments d ON d.Id = e.DepartmentId
     WHERE (@q = '' OR e.EnrollNo ILIKE '%' || @q || '%' OR e.Name ILIKE '%' || @q || '%' OR e.BadgeNo ILIKE '%' || @q || '%')`, { q: search.trim() });
-  return rows.filter((r) => !ids || (r.DepartmentId !== null && ids.includes(r.DepartmentId)))
+  return filterScope(rows, (r) => r.Id).filter((r) => !ids || (r.DepartmentId !== null && ids.includes(r.DepartmentId)))
     .map((r) => ({ ...r, IsActive: !!r.IsActive })).sort(byEnroll);
 }
 
 /** Id / AC No / name of every (or every active) employee, for pickers. */
 export async function options(activeOnly: boolean) {
   const rows = await query(`SELECT Id, EnrollNo, Name, IsActive FROM Employees ${activeOnly ? 'WHERE IsActive = TRUE' : ''}`);
-  return rows.map((r) => ({ ...r, IsActive: !!r.IsActive })).sort(byEnroll);
+  return filterScope(rows, (r) => r.Id).map((r) => ({ ...r, IsActive: !!r.IsActive })).sort(byEnroll);
 }
 
 /** Highest numeric AC No + 1 (for a new employee). */
@@ -30,6 +31,7 @@ export async function nextEnrollNo() {
 }
 
 export async function detail(id: number) {
+  assertInScope(id);
   const r = await one(`SELECT ${EMPLOYEE_COLUMNS}, e.PhotoBase64 FROM Employees e LEFT JOIN Departments d ON d.Id = e.DepartmentId WHERE e.Id = @id`, { id });
   if (!r) throw new UserError('Employee not found.', 404);
   const fingers = (await query('SELECT FingerIndex FROM FingerTemplates WHERE EmployeeId = @id', { id })).map((f) => f.FingerIndex);

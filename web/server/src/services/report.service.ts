@@ -4,6 +4,7 @@ import { num } from '../utils/format';
 import { UserError } from '../utils/errors';
 import { addDays, addMonths, fmt, monthStart, year, type DT } from '../utils/time';
 import { one, query } from '../config/db';
+import { filterScope, inScope } from '../utils/scope';
 import { excel, pdf, salarySlip } from './export.service';
 import { hm, process, summarize, Status, type DayRecord } from './attendance.service';
 import * as compoff from './compoff.service';
@@ -140,7 +141,7 @@ function departmentSummary(title: string, period: string, days: DayRecord[]): Re
 async function requestsReport(title: string, from: DT, to: DT, departmentId: number | null, employeeId: number | null): Promise<ReportResult> {
   const deptEmps = departmentId ? new Set((await query('SELECT Id FROM Employees WHERE DepartmentId = @d', { d: departmentId })).map((r) => r.Id)) : null;
   const list = (await adminList('', '')).filter((r) => r.RequestDate >= sqlD(from) && r.RequestDate <= sqlD(to)
-    && (!employeeId || r.EmployeeId === employeeId) && (!deptEmps || deptEmps.has(r.EmployeeId)));
+    && (!employeeId || r.EmployeeId === employeeId) && (!deptEmps || deptEmps.has(r.EmployeeId)) && inScope(r.EmployeeId));
   const columns = ['Date', 'Emp ID', 'Name', 'Type', 'Details', 'Amount / Hours', 'Status', 'Decided By', 'Decided On'];
   const rows = list.map((r) => [r.Date, r.EnrollNo, r.Name, r.TypeName, [r.Category, r.Time, r.Details].filter(Boolean).join(' · '),
     r.Type === 'Overtime' ? `${r.Amount} h` : r.Type === 'CompOff' ? `${r.Amount} day` : r.AmountText, r.Status, r.DecidedBy ?? '', r.DecidedOn]);
@@ -153,7 +154,7 @@ async function compOffReport(title: string, departmentId: number | null, employe
     WHERE e.IsActive = TRUE AND (CAST(@d AS int) IS NULL OR e.DepartmentId = @d) AND (CAST(@e AS int) IS NULL OR e.Id = @e)`, { d: departmentId, e: employeeId });
   const rows: (string | number)[][] = [];
   let expiry = 90;
-  for (const e of emps.sort(byEnroll)) {
+  for (const e of filterScope(emps, (x) => x.Id).sort(byEnroll)) {
     const b = await compoff.balance(e.Id);
     expiry = b.expiryDays;
     if (!b.earned && !b.used && !b.pending) continue;

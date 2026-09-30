@@ -1,5 +1,6 @@
 /** Department List: company tree with sub-departments (DepartmentWindow.cs). */
 import { exec, one, query } from '../config/db';
+import { scopeDepartments } from '../utils/scope';
 import { UserError } from '../utils/errors';
 import { companyName } from './settings.service';
 
@@ -18,7 +19,10 @@ export async function withChildren(id: number): Promise<number[]> {
 export async function list() {
   const departments = await query(`SELECT d.Id, d.Name, d.ParentId, (SELECT COUNT(*) FROM Employees e WHERE e.DepartmentId = d.Id) Employees
     FROM Departments d ORDER BY d.Name`);
-  return { company: (await companyName()).toUpperCase(), departments };
+  // HOD: their department tree only; its top department is shown directly under the company.
+  const sc = scopeDepartments();
+  const visible = sc ? departments.filter((d) => sc.has(d.Id)).map((d) => ({ ...d, ParentId: d.ParentId !== null && sc.has(d.ParentId) ? d.ParentId : null })) : departments;
+  return { company: (await companyName()).toUpperCase(), departments: visible };
 }
 
 export async function create(name: string, parentId: number | null) {

@@ -3,6 +3,7 @@
  * changes, and a rotation generator (e.g. Morning → Evening → Night, changing every 7 days).
  */
 import { exec, query, transaction } from '../config/db';
+import { inScope } from '../utils/scope';
 import { byEnroll, isWeeklyOff, loadRoster, loadShifts, rosterKey } from '../models';
 import { UserError } from '../utils/errors';
 import { addDays, dayOfWeek, fmt, mustParse, sqlD, type DT } from '../utils/time';
@@ -17,7 +18,7 @@ export async function grid(from: DT, to: DT, departmentId: number | null) {
   const ids = departmentId ? await withChildren(departmentId) : null;
   const emps = (await query(`SELECT e.Id, e.EnrollNo, e.Name, e.ShiftId, e.DepartmentId, d.Name Department FROM Employees e
       LEFT JOIN Departments d ON d.Id = e.DepartmentId WHERE e.IsActive = TRUE`))
-    .filter((r) => !ids || (r.DepartmentId !== null && ids.includes(r.DepartmentId))).sort(byEnroll);
+    .filter((r) => inScope(r.Id) && (!ids || (r.DepartmentId !== null && ids.includes(r.DepartmentId)))).sort(byEnroll);
   const shifts = await loadShifts();
   const byId = new Map(shifts.map((s) => [s.Id, s]));
   const roster = await loadRoster(from, to, emps.map((e) => e.Id));

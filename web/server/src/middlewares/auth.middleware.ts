@@ -6,13 +6,18 @@ import { hasPassword, NO_PASSWORD_REMOTE, sessionUser } from '../services/auth.s
 import { piToken } from '../services/pi.service';
 import { sessionEmployee } from '../services/portalAuth.service';
 import { bearer } from '../utils/http';
+import { one, query } from '../config/db';
+import { withChildren } from '../services/department.service';
 import { allowed, type Role } from '../utils/permissions';
+import { runInScope } from '../utils/scope';
 
 declare module 'express-serve-static-core' {
   interface Request {
     /** Administrator user name and role (requireAdmin). */
     user?: string;
     role?: Role;
+    /** AdminUsers.Id of the logged-in user (null = Supervisor password). */
+    userId?: number | null;
     /** Logged-in employee (requireEmployee). */
     employeeId?: number;
   }
@@ -27,15 +32,32 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
   if (s) {
     req.user = s.user;
     req.role = s.role;
+    req.userId = s.userId;
     return next();
   }
   try {
     if (!(await hasPassword())) {
-      if (isLocal(req)) { req.user = 'Supervisor'; req.role = 'Admin'; return next(); }
+      if (isLocal(req)) { req.user = 'Supervisor'; req.role = 'SuperAdmin'; return next(); }
       return void res.status(403).json({ error: NO_PASSWORD_REMOTE });
     }
   } catch (e) { return next(e); }
   res.status(401).json({ error: 'Please log in.' });
+}
+
+/**
+ * HOD users only see their department and its sub-departments (utils/scope). The department is read on every request, so
+ * a change in Users & Roles or a new employee applies at once. An HOD without a department sees nobody.
+ */
+export async function withScope(req: Request, _res: Response, next: NextFunction) {
+  if (req.role !== 'HOD') return next();
+  try {
+    const u = req.userId ? await one('SELECT DepartmentId FROM AdminUsers WHERE Id = @id', { id: req.userId }) : null;
+    const depts = u?.DepartmentId ? await withChildren(u.DepartmentId) : [];
+    const emps = depts.length ? await query('SELECT Id, EnrollNo FROM Employees WHERE DepartmentId = ANY(@d)', { d: depts }) : [];
+    runInScope({
+      departmentIds: new Set(depts), employeeIds: new Set(emps.map((e) => e.Id as number)), enrollNos: new Set(emps.map((e) => e.EnrollNo as string)),
+    }, next);
+  } catch (e) { next(e); }
 }
 
 /** The role of the logged-in user must allow this call (utils/permissions). */

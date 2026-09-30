@@ -14,7 +14,7 @@ export function Settings() {
 
   useEffect(() => {
     api.get('/settings/company').then((r) => { setF(r); setCs(r.connectionString); });
-    api.get('/settings/pi').then(setPi);
+    if (app.can('system')) api.get('/settings/pi').then(setPi).catch(() => {});
   }, []);
   if (!f) return <Page title="Settings" icon="settings"><div className="text-slate-500">Loading…</div></Page>;
 
@@ -41,7 +41,7 @@ export function Settings() {
 
         <CompanyProfile value={f.profile} onChange={(p) => set('profile', p)} onSave={() => say(api.put('/settings/company', f))} />
 
-        <Card title="Raspberry Pi (LX50 on USB)">
+        {app.can('system') && <Card title="Raspberry Pi (LX50 on USB)">
           <div className="space-y-3 p-4">
             <Note tone="info">{'The Pi reads the LX50 and sends punches and the user list here; it also runs Upload / Del(Device) commands from this program.\nPut these lines in /etc/lx50pi/config.ini on the Pi and run: sudo systemctl restart lx50pi'}</Note>
             <pre className="overflow-x-auto rounded-md bg-slate-900 p-3 text-xs text-green-200">{piConfig}</pre>
@@ -56,7 +56,7 @@ export function Settings() {
             {pi?.bases?.length > 1 && <Note>{`This PC has several addresses: ${pi.bases.join(' , ')}\nUse the one on the Pi's network.`}</Note>}
             {!base.startsWith('https://') && <Note>{`Windows Firewall must allow inbound TCP port ${pi?.port ?? 4000} for the Pi to reach this PC.`}</Note>}
           </div>
-        </Card>
+        </Card>}
 
         <Card title="ADMS Server (Push devices)">
           <div className="space-y-3 p-4">
@@ -68,7 +68,7 @@ export function Settings() {
           </div>
         </Card>
 
-        <Card title="Database (PostgreSQL)">
+        {app.can('system') && <Card title="Database (PostgreSQL)">
           <div className="space-y-3 p-4">
             <Field label="Connection string (web server)"><Input value={cs} onChange={(e) => setCs(e.target.value)} className="font-mono text-xs" /></Field>
             <div className="flex flex-wrap gap-2">
@@ -78,7 +78,7 @@ export function Settings() {
             </div>
             <Note>{'The web version has its own PostgreSQL database (Supabase in the cloud); the Windows program keeps its SQL Server database. Example:\npostgresql://postgres.abcdefgh:PASSWORD@aws-0-ap-south-1.pooler.supabase.com:5432/postgres\nOn Render the connection string is the environment variable DATABASE_URL.'}</Note>
           </div>
-        </Card>
+        </Card>}
       </div>
       {backup && <BackupDialog onClose={() => setBackup(false)} />}
     </Page>

@@ -13,7 +13,11 @@ export type Action =
 /** Runs a sidebar action from any screen. */
 export const runAction = (a: Action) => window.dispatchEvent(new CustomEvent('zk:action', { detail: a }));
 
-export interface NavItem { label: string; icon: string; color: string; to?: string; action?: Action; area?: string }
+export interface NavItem {
+  label: string; icon: string; color: string; to?: string; action?: Action; area?: string;
+  /** hidden without write access to the area */
+  write?: boolean;
+}
 export interface NavGroup { title: string; items: NavItem[] }
 
 export const NAV: NavGroup[] = [
@@ -32,24 +36,24 @@ export const NAV: NavGroup[] = [
   {
     title: 'Toolbar',
     items: [
-      { label: 'Machine List', icon: 'device', color: '#334155', to: '/machines' },
+      { label: 'Machine List', icon: 'device', color: '#334155', to: '/machines', area: 'devices' },
       { label: 'Employees', icon: 'people', color: '#d2691e', to: '/employees' },
       { label: 'AC Log', icon: 'clock', color: '#2563eb', to: '/aclog' },
       { label: 'Report', icon: 'report', color: '#4682b4', to: '/reports' },
-      { label: 'Device (Add Device)', icon: 'device', color: '#28405a', action: 'addDevice' },
-      { label: 'Del Device', icon: 'close', color: '#1e64d2', action: 'deleteDevice' },
-      { label: 'Connect', icon: 'play', color: '#16a34a', action: 'connect' },
-      { label: 'Disconnect', icon: 'stop', color: '#dc2626', action: 'disconnect' },
+      { label: 'Device (Add Device)', icon: 'device', color: '#28405a', action: 'addDevice', area: 'devices' },
+      { label: 'Del Device', icon: 'close', color: '#1e64d2', action: 'deleteDevice', area: 'devices' },
+      { label: 'Connect', icon: 'play', color: '#16a34a', action: 'connect', area: 'devices' },
+      { label: 'Disconnect', icon: 'stop', color: '#dc2626', action: 'disconnect', area: 'devices' },
       { label: 'Exit system', icon: 'power', color: '#2563eb', action: 'exit' },
     ],
   },
   {
     title: 'Data',
     items: [
-      { label: 'Import Attendance Checking Data', icon: 'import', color: '#16a34a', action: 'import' },
+      { label: 'Import Attendance Checking Data', icon: 'import', color: '#16a34a', action: 'import', area: 'attendance', write: true },
       { label: 'Export Attendance Checking Data', icon: 'export', color: '#ea580c', to: '/aclog' },
-      { label: 'Backup Database', icon: 'backup', color: '#4682b4', action: 'backup' },
-      { label: 'Usb Disk Manage', icon: 'usb', color: '#111827', action: 'import' },
+      { label: 'Backup Database', icon: 'backup', color: '#4682b4', action: 'backup', area: 'system' },
+      { label: 'Usb Disk Manage', icon: 'usb', color: '#111827', action: 'import', area: 'attendance', write: true },
       { label: 'Exit', icon: 'power', color: '#4169e1', action: 'exit' },
     ],
   },
@@ -57,10 +61,10 @@ export const NAV: NavGroup[] = [
     title: 'Attendance',
     items: [
       { label: 'Leave / Holidays', icon: 'flag', color: '#7e22ce', to: '/leave' },
-      { label: 'Append Manual Record (AC Log)', icon: 'clock', color: '#2563eb', action: 'manualPunch' },
+      { label: 'Append Manual Record (AC Log)', icon: 'clock', color: '#2563eb', action: 'manualPunch', area: 'attendance', write: true },
       { label: 'Employee Requests (Portal)', icon: 'check', color: '#16a34a', to: '/portal-admin' },
       { label: 'Attendance Rule', icon: 'rule', color: '#4682b4', action: 'attendanceRule' },
-      { label: 'Salary Rule', icon: 'rule', color: '#2e8b57', action: 'salaryRule' },
+      { label: 'Salary Rule', icon: 'rule', color: '#2e8b57', action: 'salaryRule', area: 'payroll' },
     ],
   },
   {
@@ -74,41 +78,41 @@ export const NAV: NavGroup[] = [
     title: 'Maintenance/Options',
     items: [
       { label: 'Department List', icon: 'home', color: '#2e8b57', to: '/departments' },
-      { label: 'Administrator', icon: 'lock', color: '#b8860b', action: 'admin' },
+      { label: 'Administrator', icon: 'lock', color: '#b8860b', action: 'admin', area: 'system' },
       { label: 'Employees', icon: 'people', color: '#d2691e', to: '/employees' },
       { label: 'Maintenance Timetables', icon: 'timer', color: '#a52a2a', to: '/shifts' },
       { label: 'Holidays / Leave Class', icon: 'sun', color: '#ea580c', to: '/leave' },
       { label: 'Attendance Rule', icon: 'rule', color: '#4682b4', action: 'attendanceRule' },
-      { label: 'Salary Rule', icon: 'rule', color: '#2e8b57', action: 'salaryRule' },
+      { label: 'Salary Rule', icon: 'rule', color: '#2e8b57', action: 'salaryRule', area: 'payroll' },
       { label: 'Payroll Setup', icon: 'rule', color: '#2e8b57', to: '/payroll', area: 'payroll' },
       { label: 'Employee Portal Logins', icon: 'lock', color: '#1d4ed8', to: '/portal-admin?tab=accounts' },
       { label: 'Users & Roles', icon: 'lock', color: '#b8860b', to: '/users', area: 'users' },
-      { label: 'Database Option...', icon: 'settings', color: '#696969', to: '/settings' },
+      { label: 'Database Option...', icon: 'settings', color: '#696969', to: '/settings', area: 'settings', write: true },
     ],
   },
   {
     title: 'Device management',
     items: [
-      { label: 'Add Device', icon: 'add', color: '#2563eb', action: 'addDevice' },
-      { label: 'Edit Device', icon: 'edit', color: '#2563eb', action: 'editDevice' },
-      { label: 'Delete Device', icon: 'close', color: '#2563eb', action: 'deleteDevice' },
-      { label: 'Connect', icon: 'play', color: '#16a34a', action: 'connect' },
-      { label: 'Disconnect', icon: 'stop', color: '#dc2626', action: 'disconnect' },
-      { label: 'Download attendance logs', icon: 'download', color: '#16a34a', action: 'downloadLogs' },
-      { label: 'Download user info and Fp', icon: 'download', color: '#2563eb', action: 'downloadUsers' },
-      { label: 'Upload user info and FP', icon: 'upload', color: '#ea580c', action: 'uploadUsers' },
-      { label: 'Synchronize Time', icon: 'sync', color: '#2563eb', action: 'syncTime' },
-      { label: 'Device Information', icon: 'info', color: '#2563eb', action: 'deviceInfo' },
-      { label: 'Clear Attendance Logs', icon: 'trash', color: '#dc2626', action: 'clearLogs' },
-      { label: 'Restart Device', icon: 'refresh', color: '#696969', action: 'restart' },
+      { label: 'Add Device', icon: 'add', color: '#2563eb', action: 'addDevice', area: 'devices' },
+      { label: 'Edit Device', icon: 'edit', color: '#2563eb', action: 'editDevice', area: 'devices' },
+      { label: 'Delete Device', icon: 'close', color: '#2563eb', action: 'deleteDevice', area: 'devices' },
+      { label: 'Connect', icon: 'play', color: '#16a34a', action: 'connect', area: 'devices' },
+      { label: 'Disconnect', icon: 'stop', color: '#dc2626', action: 'disconnect', area: 'devices' },
+      { label: 'Download attendance logs', icon: 'download', color: '#16a34a', action: 'downloadLogs', area: 'devices' },
+      { label: 'Download user info and Fp', icon: 'download', color: '#2563eb', action: 'downloadUsers', area: 'devices' },
+      { label: 'Upload user info and FP', icon: 'upload', color: '#ea580c', action: 'uploadUsers', area: 'devices' },
+      { label: 'Synchronize Time', icon: 'sync', color: '#2563eb', action: 'syncTime', area: 'devices' },
+      { label: 'Device Information', icon: 'info', color: '#2563eb', action: 'deviceInfo', area: 'devices' },
+      { label: 'Clear Attendance Logs', icon: 'trash', color: '#dc2626', action: 'clearLogs', area: 'devices' },
+      { label: 'Restart Device', icon: 'refresh', color: '#696969', action: 'restart', area: 'devices' },
     ],
   },
   {
     title: 'Machine',
     items: [
-      { label: 'Download attendance logs', icon: 'download', color: '#16a34a', action: 'downloadLogs' },
-      { label: 'Download user info and Fp', icon: 'download', color: '#2563eb', action: 'downloadUsers' },
-      { label: 'Upload user info and FP', icon: 'upload', color: '#ea580c', action: 'uploadUsers' },
+      { label: 'Download attendance logs', icon: 'download', color: '#16a34a', action: 'downloadLogs', area: 'devices' },
+      { label: 'Download user info and Fp', icon: 'download', color: '#2563eb', action: 'downloadUsers', area: 'devices' },
+      { label: 'Upload user info and FP', icon: 'upload', color: '#ea580c', action: 'uploadUsers', area: 'devices' },
       { label: 'Attendance Photo Management', icon: 'photo', color: '#696969', action: 'noPhoto' },
       { label: 'AC Manage', icon: 'door', color: '#2e8b57', action: 'noAccess' },
     ],
@@ -121,7 +125,7 @@ export const NAV: NavGroup[] = [
       { label: 'Employee Schedule', icon: 'table', color: '#a52a2a', to: '/schedule' },
       { label: 'Shift Roster (rotating)', icon: 'calendar', color: '#a52a2a', to: '/roster' },
       { label: 'Attendance Rule', icon: 'rule', color: '#2563eb', action: 'attendanceRule' },
-      { label: 'Salary Rule', icon: 'rule', color: '#2e8b57', action: 'salaryRule' },
+      { label: 'Salary Rule', icon: 'rule', color: '#2e8b57', action: 'salaryRule', area: 'payroll' },
       { label: 'Leave / Holidays', icon: 'flag', color: '#7e22ce', to: '/leave' },
     ],
   },

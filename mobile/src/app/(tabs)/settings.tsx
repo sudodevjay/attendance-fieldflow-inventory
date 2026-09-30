@@ -11,7 +11,7 @@ export default function Settings() {
     <Screen>
       <Card style={{ gap: 4 }}>
         <H>{me.name}</H>
-        <Muted>AC No {me.enrollNo}{me.department ? ` · ${me.department}` : ''}{me.isManager ? ' · Manager' : ''}</Muted>
+        <Muted>AC No {me.enrollNo}{me.department ? ` · ${me.department}` : ''}{me.role === 'TeamLead' ? ' · Team Lead' : me.isManager ? ' · Manager' : ''}</Muted>
         <Muted>{me.company}{me.office && me.office !== me.company ? ` · ${me.office}` : ''}</Muted>
       </Card>
       <Btn title="My profile" kind="outline" onPress={() => router.push('/profile')} />

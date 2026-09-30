@@ -1,5 +1,6 @@
 /** Employees table — see Employee in src/ZkAttendance/Data/Entities.cs. */
 import { query } from '../config/db';
+import { filterScope } from '../utils/scope';
 import { parse, type DT } from '../utils/time';
 
 export interface Employee {
@@ -49,5 +50,6 @@ export async function loadEmployees(opts: { departmentId?: number | null; employ
   if (opts.employeeId) where.push('e.Id = @emp');
   const rows = await query(`SELECT ${EMPLOYEE_COLUMNS} FROM Employees e LEFT JOIN Departments d ON d.Id = e.DepartmentId
     WHERE ${where.join(' AND ')}`, { dept: opts.departmentId ?? null, emp: opts.employeeId ?? null });
-  return rows.map(toEmployee).sort(byEnroll);
+  // HOD: only their department (utils/scope); this also limits attendance, reports and the dashboard.
+  return filterScope(rows, (r) => r.Id).map(toEmployee).sort(byEnroll);
 }

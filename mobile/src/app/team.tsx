@@ -41,9 +41,12 @@ export default function Team() {
             <View key={`${r.kind}${r.Id}`} style={{ padding: 14, borderTopWidth: i ? 1 : 0, borderTopColor: C.line, gap: 4 }}>
               <Text style={{ fontWeight: '600' }}>{r.Name} ({r.EnrollNo})</Text>
               <Muted>{r.kind === 'leave' ? `${r.TypeName} · ${r.From} → ${r.To} (${r.Days} day(s)) · ${r.Reason}` : `${r.TypeName ?? r.Type} · ${requestTitle(r)} · ${r.Date} · ${requestDetails(r)}`}</Muted>
-              {r.Type === 'Profile' ? <Muted>Profile changes are approved by HR.</Muted> : (
+              {r.Stage ? <Text style={{ fontSize: 12, color: '#b45309' }}>{r.Stage}</Text> : null}
+              {r.Type === 'Profile' ? <Muted>Profile changes are approved by HR.</Muted> : r.CanDecide === false ? (
+                <Muted>{r.FirstApprovedBy ? 'With the manager.' : 'With the team lead.'}</Muted>
+              ) : (
                 <Row>
-                  <Btn title="Approve" onPress={() => ask(r.kind, r.Id, r.Name, 'Approved')} style={{ flex: 1, paddingVertical: 8 }} />
+                  <Btn title={r.Step === 'first' ? 'Approve (to manager)' : 'Approve'} onPress={() => ask(r.kind, r.Id, r.Name, 'Approved')} style={{ flex: 1, paddingVertical: 8 }} />
                   <Btn title="Reject" kind="danger" onPress={() => ask(r.kind, r.Id, r.Name, 'Rejected')} style={{ flex: 1, paddingVertical: 8 }} />
                 </Row>
               )}

@@ -153,7 +153,7 @@ export function Layout() {
               </button>
               {!shut && (
                 <ul className="bg-brand-50/60 py-1">
-                  {g.items.filter((it) => !it.area || app.can(it.area)).map((it) => {
+                  {g.items.filter((it) => !it.area || app.can(it.area, !!it.write)).map((it) => {
                     const cls = 'flex w-full items-center gap-2 px-3 py-[3px] text-left text-[12.5px] text-[#10328a] hover:text-orange-700 hover:underline';
                     const icon = <Icon name={it.icon} className="size-3.5" color={it.color} />;
                     return (

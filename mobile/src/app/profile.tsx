@@ -32,7 +32,7 @@ export default function Profile() {
         {me.photo ? <Image source={{ uri: `data:image/jpeg;base64,${me.photo}` }} style={{ width: 96, height: 96, borderRadius: 48 }} accessibilityLabel="Photo" />
           : <View style={{ width: 96, height: 96, borderRadius: 48, backgroundColor: C.brandLight, alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: 36, color: C.brandDark }}>{me.name.slice(0, 1)}</Text></View>}
         <Text style={{ fontSize: 20, fontWeight: '700' }}>{me.name}</Text>
-        <Muted>{me.designation || 'Employee'}{me.isManager ? ' · Manager' : ''}</Muted>
+        <Muted>{me.designation || 'Employee'}{me.role === 'TeamLead' ? ' · Team Lead' : me.isManager ? ' · Manager' : ''}</Muted>
       </Card>
       <Rows rows={rows} />
       <H style={{ fontSize: 14 }}>Emergency contact</H>

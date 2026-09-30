@@ -10,10 +10,13 @@ export const dateText = (t: DT | null) => (t === null ? '' : fmt(t, 'dd MMM yyyy
 
 /** The logged-in employee with their portal account flags. */
 export async function portalEmployee(id: number) {
-  const r = await one(`SELECT ${EMPLOYEE_COLUMNS}, e.PhotoBase64, a.IsManager, a.MustChange FROM Employees e
+  const r = await one(`SELECT ${EMPLOYEE_COLUMNS}, e.PhotoBase64, a.IsManager, a.Role, a.MustChange FROM Employees e
     LEFT JOIN Departments d ON d.Id = e.DepartmentId JOIN PortalAccounts a ON a.EmployeeId = e.Id WHERE e.Id = @id`, { id });
   if (!r) throw new UserError('Account not found.', 401);
-  return { ...toEmployee(r), PhotoBase64: r.PhotoBase64 as string | null, IsManager: !!r.IsManager, MustChange: !!r.MustChange };
+  return {
+    ...toEmployee(r), PhotoBase64: r.PhotoBase64 as string | null, IsManager: !!r.IsManager, Role: (r.Role as string) || 'Employee',
+    MustChange: !!r.MustChange,
+  };
 }
 
 export function leaveRow(l: LeaveEntry, extra: Record<string, unknown> = {}) {
@@ -21,7 +24,7 @@ export function leaveRow(l: LeaveEntry, extra: Record<string, unknown> = {}) {
     Id: l.Id, Type: l.type?.Code ?? '', TypeName: l.type?.Name ?? '', From: dateText(l.FromDate), To: dateText(l.ToDate), FromIso: sqlD(l.FromDate),
     ToIso: sqlD(l.ToDate), HalfDay: l.IsHalfDay, Days: l.IsHalfDay ? 0.5 : (l.ToDate - l.FromDate) / 86_400_000 + 1,
     Status: LEAVE_STATUS[l.Status] ?? '', Reason: l.Reason ?? '', AppliedOn: dateText(l.AppliedOn), DecidedBy: l.ApprovedBy ?? '',
-    DecidedOn: dateText(l.ApprovedOn), ...extra,
+    DecidedOn: dateText(l.ApprovedOn), FirstApprovedBy: l.FirstApprovedBy ?? '', FirstApprovedOn: dateText(l.FirstApprovedOn), ...extra,
   };
 }
 

@@ -9,6 +9,6 @@
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
     "check": "npm --prefix server run check && npm --prefix client run check",
-    "test:e2e": "python test/e2e_api.py && python test/e2e_pi.py && python test/e2e_portal.py && python test/e2e_hr.py"
+    "test:e2e": "python test/e2e_api.py && python test/e2e_pi.py && python test/e2e_portal.py && python test/e2e_hr.py && python test/e2e_roles.py"
   }
 }

@@ -3,6 +3,7 @@
  * the latest punches, this month's overtime and daily trend, pending approvals, upcoming holidays and birthdays.
  */
 import { one, query } from '../config/db';
+import { filterScope, scopeEnrollNos, scopeIds } from '../utils/scope';
 import { loadHolidays } from '../models';
 import { addDays, fmt, monthStart, now, parse, sqlD, sqlDT, today } from '../utils/time';
 import { hm, presentValue, process, Status, summarize } from './attendance.service';
@@ -52,6 +53,7 @@ export async function dashboard() {
   const punches = (await query(`SELECT a.EnrollNo, to_char(a.PunchTime, 'YYYY-MM-DD HH24:MI:SS') AS t, a.Source, e.Name FROM AttendanceLogs a
       LEFT JOIN LATERAL (SELECT x.Name FROM Employees x WHERE x.EnrollNo = a.EnrollNo ORDER BY x.Id LIMIT 1) e ON TRUE
     WHERE a.PunchTime >= @f AND a.PunchTime <= @n ORDER BY a.PunchTime DESC, a.Id DESC LIMIT 15`, { f: sqlDT(t), n: sqlDT(now() + 60_000) }))
+    .filter((r) => { const s = scopeEnrollNos(); return !s || s.has(r.EnrollNo); })
     .map((r) => ({ EnrollNo: r.EnrollNo, Name: r.Name ?? '(not in software)', Time: fmt(parse(r.t)!, 'HH:mm:ss'), Source: ['Device', 'USB', 'Manual'][r.Source] ?? '' }));
 
   // This month: overtime per employee and present count per day.
@@ -67,16 +69,18 @@ export async function dashboard() {
     });
   }
 
-  const pending = await one(`SELECT (SELECT COUNT(*) FROM LeaveEntries WHERE Status = 0) leave,
-    (SELECT COUNT(*) FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE r.Status = 0 AND r.Type = 'Regularisation') regularisation,
-    (SELECT COUNT(*) FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE r.Status = 0 AND r.Type = 'Overtime') overtime,
-    (SELECT COUNT(*) FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE r.Status = 0 AND r.Type = 'CompOff') compOff,
-    (SELECT COUNT(*) FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE r.Status = 0 AND r.Type = 'Profile') profile,
-    (SELECT COUNT(*) FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE r.Status = 0 AND r.Type IN ('Expense', 'Advance')) claims`);
+  // HOD: only their department (@ids NULL = everybody).
+  const sc = scopeIds();
+  const pending = await one(`SELECT (SELECT COUNT(*) FROM LeaveEntries WHERE Status = 0 AND (CAST(@ids AS int[]) IS NULL OR EmployeeId = ANY(@ids))) leave,
+    (SELECT COUNT(*) FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE r.Status = 0 AND r.Type = 'Regularisation' AND (CAST(@ids AS int[]) IS NULL OR r.EmployeeId = ANY(@ids))) regularisation,
+    (SELECT COUNT(*) FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE r.Status = 0 AND r.Type = 'Overtime' AND (CAST(@ids AS int[]) IS NULL OR r.EmployeeId = ANY(@ids))) overtime,
+    (SELECT COUNT(*) FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE r.Status = 0 AND r.Type = 'CompOff' AND (CAST(@ids AS int[]) IS NULL OR r.EmployeeId = ANY(@ids))) compOff,
+    (SELECT COUNT(*) FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE r.Status = 0 AND r.Type = 'Profile' AND (CAST(@ids AS int[]) IS NULL OR r.EmployeeId = ANY(@ids))) profile,
+    (SELECT COUNT(*) FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE r.Status = 0 AND r.Type IN ('Expense', 'Advance') AND (CAST(@ids AS int[]) IS NULL OR r.EmployeeId = ANY(@ids))) claims`, { ids: sc ? [...sc] : null });
 
   const hol = await loadHolidays(t, addDays(t, 45));
   const holidays = [...hol].sort((a, b) => a[0] - b[0]).slice(0, 5).map(([d, name]) => ({ date: fmt(d, 'dd MMM, ddd'), name }));
-  const people = await query(`SELECT Name, to_char(BirthDate, 'YYYY-MM-DD') AS b, to_char(JoinDate, 'YYYY-MM-DD') AS j FROM Employees WHERE IsActive = TRUE`);
+  const people = filterScope(await query(`SELECT Id, Name, to_char(BirthDate, 'YYYY-MM-DD') AS b, to_char(JoinDate, 'YYYY-MM-DD') AS j FROM Employees WHERE IsActive = TRUE`), (r) => r.Id);
   const within = (iso: string | null, days: number) => {
     if (!iso) return null;
     const d = parse(iso)!;

@@ -1,6 +1,7 @@
 /** Employee List → Export / Import (Excel with the same columns both ways, so a file can be edited and loaded back). */
 import ExcelJS from 'exceljs';
 import { exec, one, query, transaction } from '../config/db';
+import { inScope } from '../utils/scope';
 import { byEnroll } from '../models';
 import { UserError } from '../utils/errors';
 import { fmt, make, sqlD, today } from '../utils/time';
@@ -9,6 +10,7 @@ import { excel } from './export.service';
 const COLUMNS = ['AC No', 'Name', 'No.', 'Gender', 'Title', 'Mobile', 'Card', 'Department', 'Shift', 'Join Date', 'Monthly Salary', 'OT Rate / Hour'];
 
 export async function exportEmployees(ids: number[]) {
+  ids = ids.filter((id) => inScope(id));
   const rows = await query(`SELECT e.EnrollNo, e.Name, e.BadgeNo, e.Gender, e.Designation, e.Phone, e.CardNo, d.Name Dept, s.Name Shift,
       to_char(e.JoinDate, 'YYYY-MM-DD') AS JoinDate, CAST(e.MonthlySalary AS float) Sal, CAST(e.OtRatePerHour AS float) Ot
     FROM Employees e LEFT JOIN Departments d ON d.Id = e.DepartmentId LEFT JOIN Shifts s ON s.Id = e.ShiftId

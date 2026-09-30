@@ -12,6 +12,8 @@ import {
 export interface Me {
   id: number; enrollNo: string; name: string; designation: string; department: string; shift: string; phone: string; email: string;
   gender: string; badgeNo: string; joinDate: string; birthDate: string; address: string; photo: string | null; isManager: boolean;
+  /** Employee / TeamLead / Manager (isManager = has a team) */
+  role?: string;
   mustChange: boolean; company: string; office: string; allowCheckIn: boolean;
   reportingManager?: string;
   /** HR profile (bank account and Aadhaar masked). */

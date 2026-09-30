@@ -4,7 +4,7 @@ import { api, session } from './api';
 
 export interface Me {
   id: number; enrollNo: string; name: string; designation: string; department: string; shift: string; phone: string; email: string;
-  gender: string; badgeNo: string; joinDate: string; birthDate: string; address: string; photo: string | null; isManager: boolean;
+  gender: string; badgeNo: string; joinDate: string; birthDate: string; address: string; photo: string | null; isManager: boolean; role?: string;
   mustChange: boolean; company: string; office: string; allowCheckIn: boolean;
   reportingManager: string;
   /** HR profile; Aadhaar and bank account come masked (last 4 digits). */

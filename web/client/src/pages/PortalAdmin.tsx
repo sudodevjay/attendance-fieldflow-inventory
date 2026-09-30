@@ -81,7 +81,7 @@ function Requests({ initialType }: { initialType: string }) {
               ? <span className="text-xs">{Object.entries(r.Changes as Record<string, string>).map(([k, v]) => <span key={k} className="mr-2 inline-block"><b>{FIELD_NAMES[k] ?? k}:</b> {v || '(empty)'}</span>)}</span>
               : r.Details) },
             { key: 'HasAttachment', header: 'Receipt', render: (r) => (r.HasAttachment ? <button type="button" className="text-brand-700 underline" onClick={(e) => { e.stopPropagation(); setReceipt(r.Id); }}>View</button> : '') },
-            { key: 'Applied', header: 'Applied', value: (r) => r.CreatedAt }, { key: 'DecidedBy', header: 'Decided By' }, { key: 'DecidedOn', header: 'Decided On' },
+            { key: 'Applied', header: 'Applied', value: (r) => r.CreatedAt }, { key: 'FirstApprovedBy', header: 'Team Lead' }, { key: 'DecidedBy', header: 'Decided By' }, { key: 'DecidedOn', header: 'Decided On' },
           ]} />
       </div>
       {receipt !== null && (
@@ -116,8 +116,8 @@ function Accounts() {
     if (!sel.length || !(await app.confirm(`Remove the portal login of ${sel.length} employee(s)? They can no longer log in.`))) return;
     if (await app.run(() => api.post('/portal-admin/accounts/delete', { ids: sel }))) await load();
   };
-  const manager = async (r: any, on: boolean) => {
-    if (await app.run(() => api.put(`/portal-admin/accounts/${r.Id}`, { isManager: on }))) await load();
+  const setRole = async (r: any, role: string) => {
+    if (await app.run(() => api.put(`/portal-admin/accounts/${r.Id}`, { role }))) await load();
   };
 
   return (
@@ -126,14 +126,22 @@ function Accounts() {
         <Button variant="primary" icon="lock" onClick={() => create(false)}>Create / reset login (random password)</Button>
         <Button icon="edit" onClick={() => create(true)}>Set password…</Button>
         <Button variant="danger" icon="trash" onClick={remove}>Remove login</Button>
-        <span className="text-xs text-slate-500">Select employees (Ctrl / Shift for several). A manager approves the requests of the people who report to them (Employees → HR Profile → Reporting Manager), or else of their department and its sub-departments.</span>
+        <span className="text-xs text-slate-500">Select employees (Ctrl / Shift for several). Role: a Team Lead sees everybody below them (Employees → HR Profile → Reporting Manager) and approves first; a Manager sees everybody below them (team leads' teams too) and decides. A manager nobody reports to looks after their department and its sub-departments.</span>
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <DataTable rows={rows} rowKey={(r) => r.Id} selected={sel} onSelect={(k) => setSel(k as number[])}
           columns={[
             { key: 'EnrollNo', header: 'AC No (login)' }, { key: 'Name', header: 'Name' }, { key: 'Department', header: 'Department' },
             { key: 'HasAccount', header: 'Login', render: (r) => (r.HasAccount ? <StatusBadge value="Approved" /> : <span className="text-slate-400">none</span>) },
-            { key: 'IsManager', header: 'Manager', render: (r) => r.HasAccount && <span onClick={(e) => e.stopPropagation()}><Check label="" checked={r.IsManager} onChange={(v) => manager(r, v)} /></span> },
+            {
+              key: 'Role', header: 'Role', render: (r) => r.HasAccount && (
+                <span onClick={(e) => e.stopPropagation()}>
+                  <Select value={r.Role || (r.IsManager ? 'Manager' : 'Employee')} disabled={!app.can('portal', true) || app.role === 'HOD'} onChange={(e) => setRole(r, e.target.value)} className="py-0.5 text-xs">
+                    <option value="Employee">Employee</option><option value="TeamLead">Team Lead</option><option value="Manager">Manager</option>
+                  </Select>
+                </span>
+              ),
+            },
             { key: 'MustChange', header: 'Password', render: (r) => (r.HasAccount ? (r.MustChange ? 'temporary (must change)' : 'set by employee') : '') },
             { key: 'LastLogin', header: 'Last login' },
             { key: 'IsActive', header: 'Active', render: (r) => (r.IsActive ? '' : <span className="text-red-600">Inactive</span>) },

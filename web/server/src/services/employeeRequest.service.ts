@@ -7,6 +7,7 @@
 import { exec, one, query } from '../config/db';
 import { LEAVE_STATUS } from '../models';
 import { UserError } from '../utils/errors';
+import { assertInScope, filterScope } from '../utils/scope';
 import { money } from '../utils/format';
 import { dateOf, fmt, mustParse, now, parse, sqlD, sqlDT, today } from '../utils/time';
 import * as compoff from './compoff.service';
@@ -33,17 +34,20 @@ async function rows(where: string, params: Record<string, unknown>) {
   const list = await query(`SELECT r.Id, r.EmployeeId, e.EnrollNo, e.Name, r.Type, to_char(r.RequestDate, 'YYYY-MM-DD') AS RequestDate,
       to_char(r.PunchTime, 'YYYY-MM-DD HH24:MI:SS') AS PunchTime, r.Category, CAST(r.Amount AS float) Amount, r.Installments, r.Details,
       CASE WHEN r.Attachment IS NULL THEN 0 ELSE 1 END AS HasAttachment, r.Payload, r.Status, r.DecidedBy, to_char(r.DecidedOn, 'YYYY-MM-DD') AS DecidedOn,
-      r.DecisionNote, to_char(r.CreatedAt, 'YYYY-MM-DD HH24:MI:SS') AS CreatedAt
+      r.DecisionNote, to_char(r.CreatedAt, 'YYYY-MM-DD HH24:MI:SS') AS CreatedAt, r.FirstApprovedBy, to_char(r.FirstApprovedOn, 'YYYY-MM-DD') AS FirstApprovedOn
     FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE ${where} ORDER BY r.CreatedAt DESC`, params);
   return list.map(({ Payload, ...r }) => ({
     ...r, Changes: Payload ? JSON.parse(Payload) as Record<string, string> : null, TypeName: TYPE_NAMES[r.Type] ?? r.Type,
     Status: LEAVE_STATUS[r.Status] ?? '', HasAttachment: !!r.HasAttachment, Date: dateText(parse(r.RequestDate)),
     Time: r.PunchTime ? fmt(parse(r.PunchTime)!, 'HH:mm') : '', AmountText: r.Amount !== null ? money(r.Amount) : '',
     Applied: dateText(parse(r.CreatedAt)), DecidedOn: dateText(parse(r.DecidedOn)),
+    FirstApprovedBy: r.FirstApprovedBy ?? '', FirstApprovedOn: dateText(parse(r.FirstApprovedOn)),
   }));
 }
 
 export type RequestRow = Awaited<ReturnType<typeof rows>>[number];
+
+export const typeName = (type: string) => TYPE_NAMES[type] ?? type;
 
 /** Own requests, optionally one type. */
 export const ofEmployee = (employeeId: number, type = '') =>
@@ -57,7 +61,8 @@ export const ofEmployees = (ids: number[], mode: 'pending' | 'recent') => (ids.l
 /** Employee Portal → Employee Requests: filter by status (Pending / Approved / Rejected, '' = all) and type. */
 export function adminList(status: string, type: string) {
   const st = status === '' ? null : LEAVE_STATUS.indexOf(status as any);
-  return rows(`(CAST(@st AS int) IS NULL OR r.Status = @st) AND (@t = '' OR r.Type = @t)`, { st, t: type });
+  return rows(`(CAST(@st AS int) IS NULL OR r.Status = @st) AND (@t = '' OR r.Type = @t)`, { st, t: type })
+    .then((list) => filterScope(list, (r) => r.EmployeeId));
 }
 
 export interface RequestInput {
@@ -204,6 +209,7 @@ export async function decideMany(ids: number[], approve: boolean, by: string, no
   by = by.trim();
   if (!by) throw new UserError(`Enter who ${approve ? 'approved' : 'rejected'} it.`);
   let n = 0;
+  for (const id of ids) assertInScope((await one('SELECT EmployeeId FROM EmployeeRequests WHERE Id = @id', { id }))?.EmployeeId);
   for (const id of ids) if (await decide(id, approve, by, note.trim().slice(0, 200) || null)) n++;
   return `${n} request(s) ${approve ? 'approved' : 'rejected'}.` + (ids.length > n ? ` ${ids.length - n} were already decided.` : '');
 }

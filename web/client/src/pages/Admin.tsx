@@ -8,11 +8,16 @@ import { Button, Card, Check, Field, Input, Modal, Note, Page, Select, TextArea 
 
 // ------------------------------------------------------------------ users
 
-interface User { Id: number; UserName: string; FullName: string; Role: string; IsActive: boolean; LastLogin: string; CreatedAt: string }
+interface User {
+  Id: number; UserName: string; FullName: string; Role: string; IsActive: boolean; LastLogin: string; CreatedAt: string;
+  DepartmentId: number | null; Department: string;
+}
 
 const ROLE_TEXT: Record<string, string> = {
-  Admin: 'Everything, including users, settings and devices.',
-  HR: 'Employees, attendance, shifts / roster, leave, portal requests, reports, announcements. Reads the rest; no users.',
+  SuperAdmin: 'Everything, also users & roles, audit log, database / backup, Raspberry Pi and the Supervisor password.',
+  Admin: 'Everything else: employees, attendance, leave, payroll, devices, portal and company settings. No users or system settings.',
+  HOD: 'Head of department: only their department and its sub-departments. Sees employees, attendance and reports, approves leave and requests. No salaries or settings.',
+  HR: 'Employees, holidays, shifts / roster, attendance, leave, portal requests, reports, announcements. Reads the rest; no users.',
   Payroll: 'Salary structure, statutory rules, salary rule and reports. Reads the rest; no users.',
   Viewer: 'Opens every screen and report but cannot change anything; no users or audit log.',
 };
@@ -39,15 +44,20 @@ export function Users() {
     } bodyClass="flex flex-col gap-3">
       <div className="flex min-h-48 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <DataTable rows={data.users} rowKey={(u) => u.Id} selected={sel} onSelect={(k) => setSel(k as number[])} onDoubleClick={(u) => setEdit({ ...u, Password: '' })}
-          empty="No users yet. The Supervisor password (Administrator) always logs in as Admin."
+          empty="No users yet. The Supervisor password (Administrator) always logs in as SuperAdmin."
           columns={[
             { key: 'UserName', header: 'User name' }, { key: 'FullName', header: 'Full name' }, { key: 'Role', header: 'Role' },
+            { key: 'Department', header: 'Department (HOD)' },
             { key: 'IsActive', header: 'Active', render: (u) => (u.IsActive ? 'Yes' : <span className="text-red-600">Disabled</span>) },
             { key: 'LastLogin', header: 'Last login' }, { key: 'CreatedAt', header: 'Created' },
           ]} />
       </div>
       <Card title="Roles">
-        <ul className="space-y-1 p-3 text-[13px]">{Object.entries(ROLE_TEXT).map(([r, t]) => <li key={r}><b className="inline-block w-20">{r}</b>{t}</li>)}</ul>
+        <ul className="space-y-1 p-3 text-[13px]">
+          {Object.entries(ROLE_TEXT).map(([r, t]) => <li key={r} className="flex gap-2"><b className="w-24 shrink-0">{r}</b><span>{t}</span></li>)}
+          <li className="flex gap-2 pt-1 text-slate-500"><b className="w-24 shrink-0">Team Lead, Manager</b>
+            <span>are employees: set them in Employee Portal → Employee Logins (Role). They work in the portal (/me) and the app.</span></li>
+        </ul>
       </Card>
       {edit && <UserDialog value={edit} roles={data.roles} onClose={() => setEdit(null)} onSaved={load} />}
     </Page>
@@ -57,8 +67,14 @@ export function Users() {
 function UserDialog({ value, roles, onClose, onSaved }: { value: Partial<User> & { Password?: string }; roles: string[]; onClose: () => void; onSaved: () => void }) {
   const app = useApp();
   const [f, setF] = useState(value);
+  const [depts, setDepts] = useState<{ Id: number; Name: string; ParentId: number | null }[]>([]);
+  useEffect(() => { api.get('/departments').then((r) => setDepts(r.departments)).catch(() => {}); }, []);
   const set = (k: string, v: unknown) => setF((x) => ({ ...x, [k]: v }));
   const save = async () => { if (await app.run(() => (f.Id ? api.put(`/users/${f.Id}`, f) : api.post('/users', f)))) { onSaved(); onClose(); } };
+  const deptName = (d: { Name: string; ParentId: number | null }): string => {
+    const parent = depts.find((x) => x.Id === d.ParentId);
+    return parent ? `${deptName(parent)} › ${d.Name}` : d.Name;
+  };
   return (
     <Modal title={f.Id ? `Edit ${value.UserName}` : 'Add User'} onClose={onClose} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>OK</Button></>}>
       <div className="grid grid-cols-2 gap-3">
@@ -68,6 +84,15 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: Partial<User> &
         <Field label={f.Id ? 'New password (empty = keep)' : 'Password * (min. 6)'}>
           <Input type="password" autoComplete="new-password" value={f.Password ?? ''} onChange={(e) => set('Password', e.target.value)} />
         </Field>
+        {f.Role === 'HOD' && (
+          <Field label="Department * (with its sub-departments)" className="col-span-2">
+            <Select value={f.DepartmentId ?? ''} onChange={(e) => set('DepartmentId', e.target.value ? Number(e.target.value) : null)}>
+              <option value="">— choose —</option>
+              {depts.map((d) => ({ id: d.Id, name: deptName(d) })).sort((a, b) => a.name.localeCompare(b.name))
+                .map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </Select>
+          </Field>
+        )}
         <div className="col-span-2"><Check label="Active (may log in)" checked={f.IsActive !== false} onChange={(v) => set('IsActive', v)} /></div>
         <div className="col-span-2"><Note>{ROLE_TEXT[f.Role ?? ''] ?? ''}</Note></div>
       </div>

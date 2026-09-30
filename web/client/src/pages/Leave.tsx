@@ -74,7 +74,7 @@ export function Leave() {
               { key: 'EnrollNo', header: 'Emp ID' }, { key: 'Name', header: 'Name' }, { key: 'Type', header: 'Type' },
               { key: 'From', header: 'From', value: (r) => r.FromIso }, { key: 'To', header: 'To', value: (r) => r.ToIso }, { key: 'Days', header: 'Days', align: 'right' },
               { key: 'HalfDay', header: 'Half Day', render: (r) => (r.HalfDay ? 'Yes' : '') }, { key: 'AppliedOn', header: 'Applied On' },
-              { key: 'ApprovedBy', header: 'Approved By' }, { key: 'DecidedOn', header: 'Decided On' }, { key: 'Reason', header: 'Reason' },
+              { key: 'FirstApprovedBy', header: 'Team Lead' }, { key: 'ApprovedBy', header: 'Approved By' }, { key: 'DecidedOn', header: 'Decided On' }, { key: 'Reason', header: 'Reason' },
             ]} />
         </Grid>
       </>}

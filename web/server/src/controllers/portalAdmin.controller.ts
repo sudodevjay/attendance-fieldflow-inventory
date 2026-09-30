@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import * as requests from '../services/employeeRequest.service';
 import * as accounts from '../services/portalAccount.service';
 import { UserError } from '../utils/errors';
+import { assertInScope } from '../utils/scope';
 import { bodyIds, idParam, sendJpeg } from '../utils/http';
 
 export const accountList = async (_req: Request, res: Response) => res.json(await accounts.list());
@@ -9,7 +10,9 @@ export const accountCreate = async (req: Request, res: Response) =>
   res.json({ accounts: await accounts.createOrReset(bodyIds(req), String(req.body.password ?? '')) });
 
 export async function accountUpdate(req: Request, res: Response) {
-  await accounts.setManager(idParam(req), !!req.body.isManager);
+  // Older clients send isManager: true / false.
+  const role = req.body.role ?? (req.body.isManager === undefined ? undefined : req.body.isManager ? 'Manager' : 'Employee');
+  await accounts.setRole(idParam(req), role);
   res.json({ ok: true });
 }
 
@@ -24,6 +27,7 @@ export const requestList = async (req: Request, res: Response) =>
 export async function requestAttachment(req: Request, res: Response) {
   const r = await requests.attachment(idParam(req));
   if (!r?.Attachment) throw new UserError('No receipt.', 404);
+  assertInScope(r.EmployeeId);
   sendJpeg(res, r.Attachment);
 }
 

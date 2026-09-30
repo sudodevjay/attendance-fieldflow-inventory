@@ -1,5 +1,6 @@
 /** Maintenance Timetables (shifts) and Employee Schedule (bulk shift assignment). */
-import { exec, one, query, transaction, type Tx } from '../config/db';
+import { exec, one, query, transaction, type Tx } from '../config/db';
+import { inScope } from '../utils/scope';
 import type * as MSSQL from 'mssql';
 import { byEnroll, crossesMidnight, durationMinutes, hhmm, loadShifts, shiftLabel, workMinutes } from '../models';
 import { UserError } from '../utils/errors';
@@ -100,7 +101,7 @@ export async function schedule(departmentId: number | null) {
   const shifts = new Map((await loadShifts()).map((s) => [s.Id, s]));
   const rows = await query(`SELECT e.Id, e.EnrollNo, e.Name, d.Name Department, e.ShiftId, e.DepartmentId FROM Employees e
     LEFT JOIN Departments d ON d.Id = e.DepartmentId WHERE e.IsActive = TRUE`);
-  return rows.filter((r) => !ids || (r.DepartmentId !== null && ids.includes(r.DepartmentId))).sort(byEnroll).map((r) => {
+  return rows.filter((r) => inScope(r.Id) && (!ids || (r.DepartmentId !== null && ids.includes(r.DepartmentId)))).sort(byEnroll).map((r) => {
     const s = r.ShiftId ? shifts.get(r.ShiftId) : undefined;
     return { Id: r.Id, EnrollNo: r.EnrollNo, Name: r.Name, Department: r.Department, Shift: s ? shiftLabel(s) : '', WeeklyOff: s?.WeeklyOffs ?? '' };
   });

@@ -19,6 +19,8 @@ Google Drive / pendrive par bhi rakhein.
 |---|---|
 | **App (admin)** | https://zk-attendance.onrender.com — login: koi bhi user name + admin password |
 | **Employee portal** | https://zk-attendance.onrender.com/me (AC No + password) |
+| **Roles (admin panel)** | Users & Roles (sirf SuperAdmin): **SuperAdmin** (sab + users, audit, backup, Pi), **Admin** (baaki sab), **HOD** (sirf apna department + sub-departments: employees, attendance, reports dekhe, leave / requests approve; salary aur settings nahi), **HR** (employees, holidays, shifts, attendance, leave, requests, reports), **Payroll**, **Viewer**. Supervisor password = SuperAdmin |
+| **Roles (portal / app)** | Employee Portal → Employee Logins → Role: **Employee**, **Team Lead** (apne neeche walon ko dekhe, pehla approve), **Manager** (apne neeche sab, team leads ki teams bhi, final approve). Kaun kiske neeche: Employees → HR Profile → **Reporting Manager**. Team lead ka reject = final |
 | **Pi Wi-Fi badalna** | https://zk-attendance.onrender.com/wifisetup — alag password (Render env `WIFI_SETUP_PASSWORD`). Pi ke aas-paas ke Wi-Fi dikhte hain, ek chuno + password → Pi us par shift ho jata hai. Saved sirf 2: naya (priority 999) + fallback `satyendra` (900); purana delete. Galat password = Pi purane Wi-Fi par wapas |
 | **Mobile app** | Server address: `https://zk-attendance.onrender.com` (`https://` zaroor likhein) |
 | **Code** | GitHub `sudodevjay/attendancecontroller`, branch **`render-postgres`** (service public repo URL se bani hai: push ke baad **Manual Deploy** karna hota hai, neeche dekhein) |

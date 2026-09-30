@@ -2,14 +2,17 @@
 import { exec, one, query } from '../config/db';
 import { byEnroll } from '../models';
 import { UserError } from '../utils/errors';
+import { isPortalRole } from '../utils/permissions';
+import { filterScope } from '../utils/scope';
 import { endSessions, hashPassword, randomPassword } from './portalAuth.service';
 import { getSetting, setSetting } from './settings.service';
 
 export async function list() {
-  const rows = await query(`SELECT e.Id, e.EnrollNo, e.Name, d.Name Department, e.IsActive, a.IsManager, a.MustChange,
+  const rows = await query(`SELECT e.Id, e.EnrollNo, e.Name, d.Name Department, e.IsActive, a.IsManager, a.Role, a.MustChange,
       to_char(a.LastLogin, 'YYYY-MM-DD HH24:MI') AS LastLogin, CASE WHEN a.EmployeeId IS NULL THEN 0 ELSE 1 END AS HasAccount
     FROM Employees e LEFT JOIN Departments d ON d.Id = e.DepartmentId LEFT JOIN PortalAccounts a ON a.EmployeeId = e.Id`);
-  return rows.map((r) => ({ ...r, IsActive: !!r.IsActive, IsManager: !!r.IsManager, MustChange: !!r.MustChange, HasAccount: !!r.HasAccount })).sort(byEnroll);
+  return filterScope(rows, (r) => r.Id)
+    .map((r) => ({ ...r, Role: r.Role ?? '', IsActive: !!r.IsActive, IsManager: !!r.IsManager, MustChange: !!r.MustChange, HasAccount: !!r.HasAccount })).sort(byEnroll);
 }
 
 /** Creates / resets logins; without a password a random one is made. Returns the passwords to hand out. */
@@ -29,8 +32,10 @@ export async function createOrReset(ids: number[], password: string) {
   return out;
 }
 
-export async function setManager(employeeId: number, isManager: boolean) {
-  const n = await exec('UPDATE PortalAccounts SET IsManager = @m WHERE EmployeeId = @id', { m: isManager, id: employeeId });
+/** Employee / TeamLead / Manager (IsManager = has a team, kept for the mobile app). */
+export async function setRole(employeeId: number, role: unknown) {
+  if (!isPortalRole(role)) throw new UserError('Choose Employee, Team Lead or Manager.');
+  const n = await exec('UPDATE PortalAccounts SET Role = @r, IsManager = @m WHERE EmployeeId = @id', { r: role, m: role !== 'Employee', id: employeeId });
   if (!n) throw new UserError('Create the login first.');
 }
 
