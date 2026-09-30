@@ -202,6 +202,60 @@ class Agent:
         self.name = re.sub(r'[^\w.-]', '', hostname or socket.gethostname())[:40]
         self.state_file = state_file or os.path.join(os.path.dirname(cfg['store']['path']) or '.', 'wifi-agent.json')
         self.state = self._load()
+        self.iface = w.get('interface', 'wlan0')
+        # The Wi-Fi status is read once a minute (not every poll): asking the Pi 4's Wi-Fi chip too often is avoided.
+        self.status_every = float(w.get('status_seconds', '60'))
+        self._status, self._status_at = None, -1e9
+        # Watchdog: no answer from the server for a while = restart the Wi-Fi, later reload the Wi-Fi driver
+        # (the Pi 4's brcmfmac chip can hang: "brcmf_proto_bcdc_query_dcmd ... -110", seen 2026-09-30).
+        self.restart_after = float(w.get('restart_wifi_after_seconds', '180'))
+        self.reload_after = float(w.get('reload_driver_after_seconds', '600'))
+        self.system = self._system
+        self.last_ok = time.monotonic()
+        self.last_restart = self.last_reload = -1e9
+
+    @staticmethod
+    def _system(args, timeout=60):
+        p = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout, p.stderr
+
+    def status(self, fresh=False):
+        now = time.monotonic()
+        if fresh or self._status is None or now - self._status_at >= self.status_every:
+            self._status, self._status_at = self.nm.current(), now
+        return self._status
+
+    def power_save_off(self):
+        """Wi-Fi power saving off (now and for every connection): it makes the Pi's Wi-Fi drop out."""
+        conf = '/etc/NetworkManager/conf.d/lx50pi-wifi-powersave.conf'
+        try:
+            if os.path.isdir(os.path.dirname(conf)) and not os.path.exists(conf):
+                with open(conf, 'w', encoding='utf-8') as f:
+                    f.write('# lx50pi: Wi-Fi power saving off (2 = disable)\n[connection]\nwifi.powersave = 2\n')
+            self.system(['iw', 'dev', self.iface, 'set', 'power_save', 'off'], 20)
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning('wifi: power save not turned off: %s', e)
+
+    def watchdog(self, now=None):
+        """Called when the server could not be reached. Returns what it did ('' / 'restart' / 'reload')."""
+        now = time.monotonic() if now is None else now
+        down = now - self.last_ok
+        try:
+            if down >= self.reload_after and now - self.last_reload >= 900:
+                log.warning('wifi: no server for %d s: reloading the Wi-Fi driver', down)
+                self.last_reload = self.last_restart = now
+                self.system(['modprobe', '-r', 'brcmfmac'], 60)
+                self.system(['modprobe', 'brcmfmac'], 60)
+                return 'reload'
+            if down >= self.restart_after and now - self.last_restart >= 300:
+                log.warning('wifi: no server for %d s: restarting the Wi-Fi', down)
+                self.last_restart = now
+                self.nm.run(['radio', 'wifi', 'off'], 30)
+                self.nm.run(['radio', 'wifi', 'on'], 30)
+                return 'restart'
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning('wifi: watchdog: %s', e)
+        return ''
 
     def _load(self):
         try:
@@ -240,7 +294,7 @@ class Agent:
 
     def once(self):
         self.report()
-        cur = self.nm.current()
+        cur = self.status()
         q = {'pi': self.name, 'ssid': cur['ssid'], 'ip': cur['ip'], 'signal': '' if cur['signal'] is None else cur['signal'],
              'fallback': self.fallback}
         reply = self.client._request(f'{self.url}?{urllib.parse.urlencode(q)}')
@@ -257,7 +311,10 @@ class Agent:
             log.info('wifi: command %s: %s %s', cid, res['status'], res.get('error', ''))
             self.state['unreported'][cid] = res
             self._save()
+            if cmd.get('type') == 'wifi_connect':
+                self.status(fresh=True)
         self.report()
+        self.last_ok = time.monotonic()
 
     def run_forever(self):
         if not self.url:
@@ -268,11 +325,14 @@ class Agent:
             keep_two(self.nm, self.fallback)
         except NmError as e:
             log.warning('wifi: %s', e)
+        self.power_save_off()
         while True:
             try:
                 self.once()
             except CommandError as e:
                 log.debug('wifi: %s', e)
+                self.watchdog()
             except (NmError, subprocess.SubprocessError, OSError) as e:
                 log.warning('wifi: %s', e)
+                self.watchdog()
             time.sleep(self.interval)

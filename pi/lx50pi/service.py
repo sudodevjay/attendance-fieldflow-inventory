@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 
 DEFAULTS = {
     'device': {'transport': 'usb', 'usb_vid': '1b55', 'usb_pid': '0a01', 'usb_framing': 'zkusb',
-               'password': '0', 'timeout': '5', 'chunk_size': '16384'},
+               'password': '0', 'timeout': '5', 'chunk_size': '1024'},
     'poll': {'interval_seconds': '15', 'full_read_minutes': '60'},
     'cloud': {'url': '', 'users_url': '', 'commands_url': '', 'token': '', 'device_name': '', 'batch_size': '200',
               'verify_tls': 'yes'},
@@ -60,9 +60,16 @@ class Service:
     def poll_device(self) -> int:
         """Read the device once. Returns the number of new punches stored."""
         with make_device(self.cfg) as dev:
-            if not self.serial:
-                self.serial = dev.serial_number()
-                self.store.put('serial', self.serial)
+            # Read every time: another LX50 on the cable gets its own serial (and a full read) at once.
+            sn = dev.serial_number()
+            if sn and sn != self.serial:
+                if self.serial:
+                    log.info('another device on the cable: %s -> %s', self.serial, sn)
+                self.serial = sn
+                self.store.put('serial', sn)
+                self.store.put('records', -1)
+                self.store.put('users_sent', '')
+                self.force_full = True
             sizes = dev.sizes()
             last = int(self.store.get('records', -1))
             due = self.force_full or time.monotonic() - self.last_full >= self.full_every

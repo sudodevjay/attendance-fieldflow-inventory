@@ -67,6 +67,9 @@ class FakeNmcli:
             if self.active == a[2]:
                 self.active = None
             return 0, '', ''
+        if a[:2] == ['radio', 'wifi']:
+            self.radio = getattr(self, 'radio', []) + [a[2]]
+            return 0, '', ''
         raise AssertionError(f'unexpected nmcli {a}')
 
 
@@ -184,6 +187,42 @@ class WifiTests(unittest.TestCase):
             W.Agent(cfg, nm=W.Nm(run=f), client=client, hostname='housys', state_file=state).once()
             self.assertEqual(sent[-1][0], '9')
             self.assertEqual(len(sent), 3)
+
+
+class WatchdogTests(unittest.TestCase):
+    def test_restart_then_reload_rate_limited(self):
+        f = office()
+        cfg = load_config()
+        cfg['cloud']['commands_url'] = 'https://x.example/api/lx50/commands'
+        with tempfile.TemporaryDirectory() as d:
+            a = W.Agent(cfg, nm=W.Nm(run=f), client=object(), hostname='housys', state_file=os.path.join(d, 's.json'))
+            calls = []
+            a.system = lambda args, timeout=60: calls.append(args) or (0, '', '')
+            t0 = a.last_ok
+            self.assertEqual(a.watchdog(t0 + 100), '')             # short outage: nothing
+            self.assertEqual(a.watchdog(t0 + 200), 'restart')      # 3 min: Wi-Fi off / on
+            self.assertEqual(f.radio, ['off', 'on'])
+            self.assertEqual(a.watchdog(t0 + 250), '')             # not again within 5 min
+            self.assertEqual(a.watchdog(t0 + 700), 'reload')       # 10 min: driver reload
+            self.assertEqual(calls, [['modprobe', '-r', 'brcmfmac'], ['modprobe', 'brcmfmac']])
+            self.assertEqual(a.watchdog(t0 + 800), '')             # neither again right away
+
+    def test_status_is_cached(self):
+        f = office()
+        n = {'c': 0}
+        def run(args, timeout=60):
+            if args[:3] == ['-t', '-f', 'ACTIVE,SSID,SIGNAL']:
+                n['c'] += 1
+            return f(args, timeout)
+        cfg = load_config()
+        cfg['cloud']['commands_url'] = 'https://x.example/api/lx50/commands'
+        with tempfile.TemporaryDirectory() as d:
+            a = W.Agent(cfg, nm=W.Nm(run=run), client=object(), hostname='housys', state_file=os.path.join(d, 's.json'))
+            for _ in range(5):
+                a.status()
+            self.assertEqual(n['c'], 1)
+            a.status(fresh=True)
+            self.assertEqual(n['c'], 2)
 
 
 if __name__ == '__main__':

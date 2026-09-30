@@ -72,3 +72,17 @@
     protocol (maybe the SDK uses another command: `capture.ps1 -Mode write` on Windows would show it); enrol_finger
     commands now fail with a clear message. Fingerprints are enrolled in the device menu.
   - Other users untouched throughout; service restarted afterwards.
+
+## 2026-09-30 — cloud, office LX50, Wi-Fi
+- Pi talks to the cloud (Render, https://zk-attendance.onrender.com), Tailscale `housys-pi` 100.107.8.31,
+  Wi-Fi agent `lx50pi-wifi` (/wifisetup page; only the chosen network 999 + fallback `satyendra` 900 are saved).
+- Office LX50 on the cable: serial NPT6253601761, Ver 6.60 May 19 2023, 37 users, 2306 punches.
+  - Without its DC adapter it dropped off the USB every ~15 s (as on 2026-09-29).
+  - With DC power the service still failed ("control request 0xf3 failed: [Errno 5]" ~4 s after connect,
+    then USB disconnect) while a plain `info` worked: the full read with chunk_size 16384 made it drop.
+    chunk_size 1024: users + 2306 punches read without a disconnect; uploaded to the cloud. Default now 1024.
+  - The Pi still had the serial of the test LX50 (NPT6262703374): the service now reads the serial every cycle
+    and does a full read when another device is on the cable.
+- The Pi's Wi-Fi chip hung for ~8 min ("brcmf_proto_bcdc_query_dcmd ... -110"): Wi-Fi power save is now off
+  (NetworkManager conf.d/lx50pi-wifi-powersave.conf + iw), the agent reads the Wi-Fi status once a minute, and a
+  watchdog restarts the Wi-Fi after 3 min without the server and reloads brcmfmac after 10 min.

@@ -274,6 +274,36 @@ class ServiceTests(unittest.TestCase):
         svc.run_once()                                       # nothing new: no read, no upload
         self.assertEqual(len(cloud.requests), n)
 
+    def test_another_device_on_the_cable(self):
+        # The Pi learnt one LX50; then another one (other serial, same punch count) is plugged in: it is read in full at once.
+        tmp = tempfile.mkdtemp()
+        cloud = _cloud_server(self)
+        first = simulator.FakeDevice(serial='OLD0000001')
+        first.add_punch('1', datetime(2026, 9, 28, 9, 0, 0))
+        srv, port = simulator.serve(first, 'udp')
+        cfg = load_config()
+        cfg.read_dict({'device': {'transport': 'udp', 'host': '127.0.0.1', 'port': str(port)},
+                       'cloud': {'url': f'http://127.0.0.1:{cloud.server_port}/punches', 'token': 'abc'},
+                       'store': {'path': os.path.join(tmp, 'lx50.db')}})
+        svc = Service(cfg)
+        self.addCleanup(svc.store.close)
+        svc.run_once()
+        srv.shutdown()
+        srv.server_close()
+        second = simulator.FakeDevice(serial='NEW0000002')
+        second.add_punch('7', datetime(2026, 9, 30, 9, 30, 0))
+        srv2, port2 = simulator.serve(second, 'udp')
+        self.addCleanup(srv2.server_close)
+        self.addCleanup(srv2.shutdown)
+        cfg['device']['port'] = str(port2)
+        with self.assertLogs('lx50pi.service', 'INFO') as logs:
+            svc.run_once()
+        self.assertTrue(any('OLD0000001 -> NEW0000002' in m for m in logs.output))
+        self.assertEqual(svc.store.get('serial'), 'NEW0000002')
+        body = cloud.requests[-1][1]
+        self.assertEqual(body['device']['serial'], 'NEW0000002')
+        self.assertEqual([p['user_id'] for p in body['punches']], ['7'])
+
 
 def _cloud_server(test):
     cloud = HTTPServer(('127.0.0.1', 0), _Cloud)
