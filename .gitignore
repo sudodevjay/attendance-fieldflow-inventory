@@ -21,3 +21,6 @@ web/**/*.tsbuildinfo
 
 # Built apps (APK), not in git: too large
 release/
+
+# Database backups (JSON, contain personal data)
+backups/
