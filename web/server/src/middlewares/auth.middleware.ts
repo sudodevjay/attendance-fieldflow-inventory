@@ -57,7 +57,7 @@ export function auditTrail(who: (req: Request) => string | Promise<string>, role
         if (res.statusCode >= 400 && !failures) return;
         const note = res.statusCode >= 400 ? `FAILED (${res.statusCode})${details ? ' ' + details : ''}` : details;
         try {
-          await audit.write(await who(req), role(req), req.method, req.originalUrl, note, req.socket.remoteAddress ?? '');
+          await audit.write(await who(req), role(req), req.method, req.originalUrl, note, req.ip ?? req.socket.remoteAddress ?? '');
         } catch (e) { console.error('audit log not written:', e); }
       });
     }

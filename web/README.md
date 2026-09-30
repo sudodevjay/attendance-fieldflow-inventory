@@ -6,9 +6,11 @@ The Windows program (`src/ZkAttendance`, .NET WinForms) rebuilt for the browser:
 |---|---|---|
 | Frontend | React 19 + TypeScript + Tailwind CSS 4 (Vite) | `client/` |
 | Backend | Node.js + TypeScript + Express 5 | `server/` |
-| Database | **the same SQL Server database** `ZkAttendance` (same tables, same rows) | — |
+| Database | **its own PostgreSQL database** (Supabase in the cloud) with the Windows program's tables plus the web tables | `server/src/config/schema.ts` |
 
-Both programs can run at the same time on the same data. The Windows program's code is not changed.
+The web version does not use or change the Windows program's SQL Server database; `server/scripts/copy-from-sqlserver.ts`
+copies its data over once (read only). The Windows program's code is not changed.
+**Free cloud deployment (Render + Supabase): see [DEPLOY.md](DEPLOY.md).**
 
 ## Screens
 The sidebar holds everything the Windows program has in its header — the toolbar (Employees, AC Log, Report, Device,
@@ -81,14 +83,17 @@ punches and the user list come in, and Upload / Del(Device) / Download attendanc
 Set it up in **Database Option → Raspberry Pi**: copy the `[cloud]` lines into `/etc/lx50pi/config.ini` on the Pi and
 `sudo systemctl restart lx50pi`. The device then shows **Online** in the Machine List.
 
-- PC and Pi must reach each other: same Wi-Fi / LAN, and Windows Firewall must allow inbound TCP 4000
+- In the cloud (Render) the Pi only needs internet (any Wi-Fi): it calls `https://<app>.onrender.com/api/lx50/...`.
+- Server on a PC: PC and Pi must reach each other (same Wi-Fi / LAN), and Windows Firewall must allow inbound TCP 4000
   (`netsh advfirewall firewall add rule name="ZK Attendance web" dir=in action=allow protocol=TCP localport=4000`, as administrator).
 - Not available through the Pi (the LX50 / Pi do not offer it): remote fingerprint enrolment, synchronize time, clear logs,
   restart, fingerprint templates. Devices on a Windows PC's USB / Serial / Ethernet and ADMS devices stay with the Windows program.
 
 ## Run
-Requirements: Node.js 20+, SQL Server with the `ZkAttendance` database (created by the Windows program), ODBC Driver 18
-for SQL Server. The server logs in to SQL Server with the Windows account it runs as.
+Requirements: Node.js 20+ and a PostgreSQL database (Supabase, or local, e.g.
+`docker run -d --name zk-pg -e POSTGRES_PASSWORD=zkpass -p 127.0.0.1:5433:5432 postgres:17`). The tables are created on the
+first start. To take over the Windows program's data (SQL Server is only read):
+`cd server && set DATABASE_URL=... && npx tsx scripts/copy-from-sqlserver.ts`.
 
 ```
 cd web
@@ -98,11 +103,15 @@ npm start              # http://localhost:4000  (also serves the React app)
 ```
 Development: `npm run dev:server` and `npm run dev:client` (http://localhost:5173, `/api` proxied to 4000).
 
-Connection string / port: `server/config.json` (see `server/config.example.json`), or the environment variables `PORT` and
-`ZK_CONNECTION_STRING`.
+Connection string / port: `server/config.json` (see `server/config.example.json`), or the environment variables `PORT`,
+`DATABASE_URL` (`postgresql://user:password@host:5432/db`), `PUBLIC_URL` (address shown for the Pi; Render sets
+`RENDER_EXTERNAL_URL` itself), `ADMIN_PASSWORD` (first administrator password when none is set) and `TZ` (e.g.
+`Asia/Kolkata`: the local time of punches, "today" and `DEFAULT LOCALTIMESTAMP` in the database).
 
-The server adds tables to the database — `PiCommands`, `PiDeviceUsers` (Raspberry Pi), `PortalAccounts`,
-`EmployeeRequests` (employee portal) — and the settings `Pi.Token`, `Portal.*`; the Windows program ignores them.
+Backup: **Database Option → Backup Database** downloads every table as JSON; `server/scripts/restore-backup.ts` loads it.
+
+Tests: `powershell -File test\make_test_db.ps1` (PostgreSQL in Docker on port 5433, filled from the SQL Server data), then
+`npm run test:e2e`.
 
 ## Backend structure (`server/src`)
 A request goes **route → controller → service → database**:
@@ -110,7 +119,7 @@ A request goes **route → controller → service → database**:
 | Folder | What is in it |
 |---|---|
 | `server.ts` / `app.ts` | start-up (database, web tables, listen on port 4000) / the Express app (JSON, `/api`, React app, errors) |
-| `config/` | `index.ts` settings from `config.json` / environment, `db.ts` SQL Server pool and `query` / `one` / `exec` / `transaction`, `schema.ts` the web-only tables |
+| `config/` | `index.ts` settings from `config.json` / environment, `db.ts` PostgreSQL pool and `query` / `one` / `exec` / `transaction` (@name parameters, PascalCase result columns), `schema.ts` all tables and seed rows |
 | `models/` | table rows and their loaders: employee, shift (with break), roster, leave, holiday, report result |
 | `routes/` | URL → controller, one file per area (`employee.routes.ts` = `/api/employees`, …); `index.ts` mounts them all and puts the administrator login in front |
 | `controllers/` | read the request (body, query, params), call a service, send JSON or a file |

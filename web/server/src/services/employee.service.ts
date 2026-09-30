@@ -12,14 +12,14 @@ export async function list(departmentId: number | null, includeSub: boolean, sea
   const ids = departmentId ? (includeSub ? await withChildren(departmentId) : [departmentId]) : null;
   const rows = await query(`SELECT e.Id, e.EnrollNo, e.BadgeNo, e.Name, e.Gender, e.Designation, e.Phone, e.DepartmentId,
       d.Name Department, e.IsActive FROM Employees e LEFT JOIN Departments d ON d.Id = e.DepartmentId
-    WHERE (@q = '' OR e.EnrollNo LIKE '%' + @q + '%' OR e.Name LIKE '%' + @q + '%' OR e.BadgeNo LIKE '%' + @q + '%')`, { q: search.trim() });
+    WHERE (@q = '' OR e.EnrollNo ILIKE '%' || @q || '%' OR e.Name ILIKE '%' || @q || '%' OR e.BadgeNo ILIKE '%' || @q || '%')`, { q: search.trim() });
   return rows.filter((r) => !ids || (r.DepartmentId !== null && ids.includes(r.DepartmentId)))
     .map((r) => ({ ...r, IsActive: !!r.IsActive })).sort(byEnroll);
 }
 
 /** Id / AC No / name of every (or every active) employee, for pickers. */
 export async function options(activeOnly: boolean) {
-  const rows = await query(`SELECT Id, EnrollNo, Name, IsActive FROM Employees ${activeOnly ? 'WHERE IsActive = 1' : ''}`);
+  const rows = await query(`SELECT Id, EnrollNo, Name, IsActive FROM Employees ${activeOnly ? 'WHERE IsActive = TRUE' : ''}`);
   return rows.map((r) => ({ ...r, IsActive: !!r.IsActive })).sort(byEnroll);
 }
 
@@ -61,7 +61,7 @@ export async function save(id: number | null, b: Record<string, any>): Promise<n
   const name = String(b.Name ?? '').trim();
   if (!enroll || !name) throw new UserError('AC No and Name are required.');
   if (!/^\d{1,9}$/.test(enroll)) throw new UserError('AC No must be numeric (max. 9 digits) — the LX50 uses numeric user IDs.');
-  if (await one('SELECT TOP 1 Id FROM Employees WHERE EnrollNo = @e AND Id <> @id', { e: enroll, id: id ?? 0 }))
+  if (await one('SELECT Id FROM Employees WHERE EnrollNo = @e AND Id <> @id LIMIT 1', { e: enroll, id: id ?? 0 }))
     throw new UserError(`AC No ${enroll} is already assigned to another employee.`);
 
   const old = id ? await one('SELECT EnrollNo, Privilege FROM Employees WHERE Id = @id', { id }) : null;
@@ -78,14 +78,14 @@ export async function save(id: number | null, b: Record<string, any>): Promise<n
   };
   const set = `EnrollNo = @e, Name = @n, BadgeNo = @badge, Nationality = @nat, OfficeTel = @otel, Designation = @des, CardNo = @card,
     Phone = @ph, HomeAddress = @home, Email = @mail, DevicePassword = @pwd, Gender = @g, Privilege = @pr,
-    BirthDate = CONVERT(datetime2, @bd, 120), JoinDate = CONVERT(datetime2, @jd, 120), IsActive = @act, DepartmentId = @dep,
+    BirthDate = CAST(@bd AS timestamp), JoinDate = CAST(@jd AS timestamp), IsActive = @act, DepartmentId = @dep,
     ShiftId = @sh, MonthlySalary = CAST(@sal AS decimal(18,2)), OtRatePerHour = CAST(@ot AS decimal(18,2)), PhotoBase64 = @photo`;
 
   return transaction(async (tx) => {
     let employeeId = id;
     if (!employeeId) {
-      const r = await one(`INSERT INTO Employees (EnrollNo, Name, Privilege, IsActive, MonthlySalary, OtRatePerHour) OUTPUT INSERTED.Id
-        VALUES (@e, @n, 0, 1, 0, 0)`, { e: enroll, n: name }, tx);
+      const r = await one(`INSERT INTO Employees (EnrollNo, Name, Privilege, IsActive, MonthlySalary, OtRatePerHour)
+        VALUES (@e, @n, 0, TRUE, 0, 0) RETURNING Id`, { e: enroll, n: name }, tx);
       employeeId = r!.Id as number;
     } else if (old.EnrollNo !== enroll) {
       await exec('UPDATE AttendanceLogs SET EnrollNo = @e WHERE EnrollNo = @o', { e: enroll, o: old.EnrollNo }, tx);
@@ -102,9 +102,9 @@ export async function removeMany(ids: number[]) {
   if (!ids.length) throw new UserError('Select an employee first.');
   await transaction(async (tx) => {
     await removeProfiles(ids, tx);
-    await exec(`DELETE FROM LeaveEntries WHERE EmployeeId IN (SELECT value FROM OPENJSON(@ids));
-      DELETE FROM FingerTemplates WHERE EmployeeId IN (SELECT value FROM OPENJSON(@ids));
-      DELETE FROM Employees WHERE Id IN (SELECT value FROM OPENJSON(@ids))`, { ids }, tx);
+    await exec(`DELETE FROM LeaveEntries WHERE EmployeeId = ANY(@ids);
+      DELETE FROM FingerTemplates WHERE EmployeeId = ANY(@ids);
+      DELETE FROM Employees WHERE Id = ANY(@ids)`, { ids }, tx);
   });
 }
 
@@ -118,6 +118,6 @@ export async function deleteFinger(id: number, finger: number) {
 /** Photos (base64 JPEG as stored) of these AC Nos, for the AC Log. */
 export async function photos(enrollNos: string[]): Promise<Record<string, string>> {
   if (!enrollNos.length) return {};
-  const rows = await query(`SELECT EnrollNo, PhotoBase64 FROM Employees WHERE PhotoBase64 IS NOT NULL AND EnrollNo IN (SELECT value FROM OPENJSON(@n))`, { n: enrollNos });
+  const rows = await query(`SELECT EnrollNo, PhotoBase64 FROM Employees WHERE PhotoBase64 IS NOT NULL AND EnrollNo = ANY(@n)`, { n: enrollNos });
   return Object.fromEntries(rows.map((r) => [r.EnrollNo, r.PhotoBase64]));
 }

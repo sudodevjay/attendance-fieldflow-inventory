@@ -63,7 +63,7 @@ async function leaveSummary(employeeId: number, y: number) {
   const start = make(y, 1, 1), end = make(y, 12, 31);
   const holidays = new Set((await loadHolidays(start, end)).keys());
   const rows = (await query(`SELECT ${LEAVE_COLUMNS} FROM LeaveEntries l WHERE l.EmployeeId = @id
-    AND l.FromDate <= CONVERT(datetime2, @e, 120) AND l.ToDate >= CONVERT(datetime2, @s, 120)`,
+    AND l.FromDate <= CAST(@e AS timestamp) AND l.ToDate >= CAST(@s AS timestamp)`,
   { id: employeeId, s: sqlD(start), e: sqlD(end) })).map((r) => toLeave(r, map));
   const days = (status: number, typeId: number) => rows.filter((l) => l.Status === status && l.LeaveTypeId === typeId)
     .flatMap((l) => leaveDays(l, shift, holidays)).filter((x) => year(x.date) === y).reduce((a, x) => a + x.days, 0);
@@ -92,7 +92,7 @@ export async function home(id: number) {
   const regs = await requests.ofEmployee(id, 'Regularisation');
   const offsites = regs.filter((r) => r.Status === 'Approved' && parse(r.RequestDate)! >= first).length;
 
-  const birthdays = (await query(`SELECT Name, CONVERT(varchar(10), BirthDate, 120) b FROM Employees WHERE IsActive = 1 AND BirthDate IS NOT NULL`))
+  const birthdays = (await query(`SELECT Name, to_char(BirthDate, 'YYYY-MM-DD') AS b FROM Employees WHERE IsActive = TRUE AND BirthDate IS NOT NULL`))
     .filter((r) => r.b.slice(5) === sqlD(t).slice(5)).map((r) => r.Name as string);
   const hol = await loadHolidays(t, addDays(t, 120));
   const holidays = [...hol].sort((a, b) => a[0] - b[0]).slice(0, 5).map(([day, name]) => ({ date: dateText(day), day: fmt(day, 'dddd'), name }));
@@ -121,11 +121,11 @@ export async function checkIn(id: number, checkOut: boolean, source: string) {
   if (!(await checkInAllowed())) throw new UserError('Check-in from the portal / app is turned off. Please punch on the device.');
   const e = await one('SELECT EnrollNo FROM Employees WHERE Id = @id', { id });
   const t = now();
-  if (await one(`SELECT TOP 1 Id FROM AttendanceLogs WHERE EnrollNo = @e AND PunchTime > CONVERT(datetime2, @t, 120)`, { e: e.EnrollNo, t: sqlDT(t - 60_000) }))
+  if (await one(`SELECT Id FROM AttendanceLogs WHERE EnrollNo = @e AND PunchTime > CAST(@t AS timestamp) LIMIT 1`, { e: e.EnrollNo, t: sqlDT(t - 60_000) }))
     throw new UserError('You already punched in the last minute.');
   const where = source === 'app' ? 'app' : 'web';
   await exec(`INSERT INTO AttendanceLogs (EnrollNo, PunchTime, VerifyMode, InOutMode, WorkCode, Source, Remark)
-    VALUES (@e, CONVERT(datetime2, @t, 120), -1, @io, 0, @src, @r)`,
+    VALUES (@e, CAST(@t AS timestamp), -1, @io, 0, @src, @r)`,
   { e: e.EnrollNo, t: sqlDT(t), io: checkOut ? 1 : 0, src: PunchSource.Manual, r: `Self check-${checkOut ? 'out' : 'in'} (${where})` });
   return `${checkOut ? 'Checked out' : 'Checked in'} at ${fmt(t, 'hh:mm tt')}.`;
 }
@@ -164,12 +164,12 @@ export async function applyLeave(id: number, b: LeaveRequestInput) {
   if ((to - from) / 86_400_000 > 90) throw new UserError('A leave request can be at most 90 days.');
   const reason = String(b.Reason ?? '').trim();
   if (!reason) throw new UserError('Please write the reason.');
-  if (await one(`SELECT TOP 1 Id FROM LeaveEntries WHERE EmployeeId = @id AND Status IN (0, 1)
-    AND FromDate <= CONVERT(datetime2, @t, 120) AND ToDate >= CONVERT(datetime2, @f, 120)`, { id, f: sqlD(from), t: sqlD(to) }))
+  if (await one(`SELECT Id FROM LeaveEntries WHERE EmployeeId = @id AND Status IN (0, 1)
+    AND FromDate <= CAST(@t AS timestamp) AND ToDate >= CAST(@f AS timestamp)`, { id, f: sqlD(from), t: sqlD(to) }))
     throw new UserError('You already have a leave request for these dates.');
   if (type.Code.toUpperCase() === compoff.COMP_OFF_CODE) await compoff.checkLeave(id, half ? 0.5 : (to - from) / 86_400_000 + 1);
   await exec(`INSERT INTO LeaveEntries (EmployeeId, LeaveTypeId, FromDate, ToDate, IsHalfDay, Reason, Status, AppliedOn)
-    VALUES (@id, @lt, CONVERT(datetime2, @f, 120), CONVERT(datetime2, @t, 120), @h, @r, 0, CONVERT(datetime2, @ap, 120))`,
+    VALUES (@id, @lt, CAST(@f AS timestamp), CAST(@t AS timestamp), @h, @r, 0, CAST(@ap AS timestamp))`,
   { id, lt: type.Id, f: sqlD(from), t: sqlD(to), h: half, r: reason.slice(0, 200), ap: sqlD(today()) });
   await requests.notifyNewRequest(id, `${type.Code} leave request`);
 

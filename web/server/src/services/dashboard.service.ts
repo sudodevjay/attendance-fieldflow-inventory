@@ -49,9 +49,9 @@ export async function dashboard() {
   }));
 
   // Latest punches of today (the AC Log feed).
-  const punches = (await query(`SELECT TOP 15 a.EnrollNo, CONVERT(varchar(19), a.PunchTime, 120) t, a.Source, e.Name FROM AttendanceLogs a
-      OUTER APPLY (SELECT TOP 1 x.Name FROM Employees x WHERE x.EnrollNo = a.EnrollNo ORDER BY x.Id) e
-    WHERE a.PunchTime >= @f AND a.PunchTime <= @n ORDER BY a.PunchTime DESC, a.Id DESC`, { f: sqlDT(t), n: sqlDT(now() + 60_000) }))
+  const punches = (await query(`SELECT a.EnrollNo, to_char(a.PunchTime, 'YYYY-MM-DD HH24:MI:SS') AS t, a.Source, e.Name FROM AttendanceLogs a
+      LEFT JOIN LATERAL (SELECT x.Name FROM Employees x WHERE x.EnrollNo = a.EnrollNo ORDER BY x.Id LIMIT 1) e ON TRUE
+    WHERE a.PunchTime >= @f AND a.PunchTime <= @n ORDER BY a.PunchTime DESC, a.Id DESC LIMIT 15`, { f: sqlDT(t), n: sqlDT(now() + 60_000) }))
     .map((r) => ({ EnrollNo: r.EnrollNo, Name: r.Name ?? '(not in software)', Time: fmt(parse(r.t)!, 'HH:mm:ss'), Source: ['Device', 'USB', 'Manual'][r.Source] ?? '' }));
 
   // This month: overtime per employee and present count per day.
@@ -76,7 +76,7 @@ export async function dashboard() {
 
   const hol = await loadHolidays(t, addDays(t, 45));
   const holidays = [...hol].sort((a, b) => a[0] - b[0]).slice(0, 5).map(([d, name]) => ({ date: fmt(d, 'dd MMM, ddd'), name }));
-  const people = await query(`SELECT Name, CONVERT(varchar(10), BirthDate, 120) b, CONVERT(varchar(10), JoinDate, 120) j FROM Employees WHERE IsActive = 1`);
+  const people = await query(`SELECT Name, to_char(BirthDate, 'YYYY-MM-DD') AS b, to_char(JoinDate, 'YYYY-MM-DD') AS j FROM Employees WHERE IsActive = TRUE`);
   const within = (iso: string | null, days: number) => {
     if (!iso) return null;
     const d = parse(iso)!;

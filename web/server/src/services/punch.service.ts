@@ -16,11 +16,11 @@ async function load(f: PunchFilter) {
   const from = dateOf(mustParse(f.from));
   const to = addDays(dateOf(mustParse(f.to)), 1);
   const emp = f.employeeId ? await one('SELECT EnrollNo FROM Employees WHERE Id = @id', { id: f.employeeId }) : null;
-  const rows = await query(`SELECT TOP 20000 a.Id, a.EnrollNo, CONVERT(varchar(19), a.PunchTime, 120) t, a.VerifyMode, a.Source, a.Remark,
+  const rows = await query(`SELECT a.Id, a.EnrollNo, to_char(a.PunchTime, 'YYYY-MM-DD HH24:MI:SS') AS t, a.VerifyMode, a.Source, a.Remark,
       e.Name, e.Id EmployeeId FROM AttendanceLogs a
-    OUTER APPLY (SELECT TOP 1 x.Name, x.Id FROM Employees x WHERE x.EnrollNo = a.EnrollNo ORDER BY x.Id) e
-    WHERE a.PunchTime >= CONVERT(datetime2, @f, 120) AND a.PunchTime < CONVERT(datetime2, @t, 120) AND (@e IS NULL OR a.EnrollNo = @e)
-    ORDER BY a.PunchTime DESC, a.Id DESC`, { f: sqlDT(from), t: sqlDT(to), e: emp?.EnrollNo ?? null });
+    LEFT JOIN LATERAL (SELECT x.Name, x.Id FROM Employees x WHERE x.EnrollNo = a.EnrollNo ORDER BY x.Id LIMIT 1) e ON TRUE
+    WHERE a.PunchTime >= CAST(@f AS timestamp) AND a.PunchTime < CAST(@t AS timestamp) AND (CAST(@e AS text) IS NULL OR a.EnrollNo = @e)
+    ORDER BY a.PunchTime DESC, a.Id DESC LIMIT 20000`, { f: sqlDT(from), t: sqlDT(to), e: emp?.EnrollNo ?? null });
 
   // First punch of an employee on a day = IN, later ones = OUT (same rule as the attendance calculation).
   const first = new Map<string, { id: number; t: DT }>();
@@ -73,16 +73,16 @@ export async function addManual(employeeId: number, time: string, checkOut: bool
   const emp = await one('SELECT EnrollNo FROM Employees WHERE Id = @id', { id: employeeId });
   if (!emp) throw new UserError('Select an employee.');
   const t = mustParse(time, 'punch time');
-  if (await one(`SELECT TOP 1 Id FROM AttendanceLogs WHERE EnrollNo = @e AND PunchTime = CONVERT(datetime2, @t, 120)`, { e: emp.EnrollNo, t: sqlDT(t) }))
+  if (await one(`SELECT Id FROM AttendanceLogs WHERE EnrollNo = @e AND PunchTime = CAST(@t AS timestamp) LIMIT 1`, { e: emp.EnrollNo, t: sqlDT(t) }))
     throw new UserError('A punch already exists at this time.');
   await exec(`INSERT INTO AttendanceLogs (EnrollNo, PunchTime, VerifyMode, InOutMode, WorkCode, Source, Remark)
-    VALUES (@e, CONVERT(datetime2, @t, 120), -1, @io, 0, @src, @r)`,
+    VALUES (@e, CAST(@t AS timestamp), -1, @io, 0, @src, @r)`,
   { e: emp.EnrollNo, t: sqlDT(t), io: checkOut ? 1 : 0, src: PunchSource.Manual, r: remark.trim().slice(0, 200) });
 }
 
 export async function removeMany(ids: number[]) {
   if (!ids.length) throw new UserError('Select punches first.');
-  return exec('DELETE FROM AttendanceLogs WHERE Id IN (SELECT value FROM OPENJSON(@ids))', { ids });
+  return exec('DELETE FROM AttendanceLogs WHERE Id = ANY(@ids)', { ids });
 }
 
 /** Import Attendance Checking Data: 1_attlog.dat / GLG_001.TXT / CSV from the pendrive. */

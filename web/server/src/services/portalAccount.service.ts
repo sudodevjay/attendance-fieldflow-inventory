@@ -7,7 +7,7 @@ import { getSetting, setSetting } from './settings.service';
 
 export async function list() {
   const rows = await query(`SELECT e.Id, e.EnrollNo, e.Name, d.Name Department, e.IsActive, a.IsManager, a.MustChange,
-      CONVERT(varchar(16), a.LastLogin, 120) LastLogin, CASE WHEN a.EmployeeId IS NULL THEN 0 ELSE 1 END HasAccount
+      to_char(a.LastLogin, 'YYYY-MM-DD HH24:MI') AS LastLogin, CASE WHEN a.EmployeeId IS NULL THEN 0 ELSE 1 END AS HasAccount
     FROM Employees e LEFT JOIN Departments d ON d.Id = e.DepartmentId LEFT JOIN PortalAccounts a ON a.EmployeeId = e.Id`);
   return rows.map((r) => ({ ...r, IsActive: !!r.IsActive, IsManager: !!r.IsManager, MustChange: !!r.MustChange, HasAccount: !!r.HasAccount })).sort(byEnroll);
 }
@@ -21,9 +21,8 @@ export async function createOrReset(ids: number[], password: string) {
     const e = await one('SELECT EnrollNo, Name FROM Employees WHERE Id = @id', { id });
     if (!e) continue;
     const pwd = password || randomPassword();
-    await exec(`IF EXISTS (SELECT 1 FROM PortalAccounts WHERE EmployeeId = @id)
-        UPDATE PortalAccounts SET PasswordHash = @h, MustChange = 1 WHERE EmployeeId = @id
-      ELSE INSERT INTO PortalAccounts (EmployeeId, PasswordHash, MustChange) VALUES (@id, @h, 1)`, { id, h: hashPassword(pwd) });
+    await exec(`INSERT INTO PortalAccounts (EmployeeId, PasswordHash, MustChange) VALUES (@id, @h, TRUE)
+      ON CONFLICT (EmployeeId) DO UPDATE SET PasswordHash = EXCLUDED.PasswordHash, MustChange = TRUE`, { id, h: hashPassword(pwd) });
     out.push({ EnrollNo: e.EnrollNo, Name: e.Name, Password: pwd });
   }
   endSessions(ids);
@@ -36,7 +35,7 @@ export async function setManager(employeeId: number, isManager: boolean) {
 }
 
 export async function removeMany(ids: number[]) {
-  await exec('DELETE FROM PortalAccounts WHERE EmployeeId IN (SELECT value FROM OPENJSON(@ids))', { ids });
+  await exec('DELETE FROM PortalAccounts WHERE EmployeeId = ANY(@ids)', { ids });
   endSessions(ids);
 }
 

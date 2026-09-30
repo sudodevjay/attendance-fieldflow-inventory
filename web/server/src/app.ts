@@ -8,6 +8,8 @@ import { api } from './routes';
 
 export const app = express();
 app.disable('x-powered-by');
+// Behind the Render proxy: req.ip is the caller's address (X-Forwarded-For), not the proxy's.
+if (process.env.RENDER || process.env.TRUST_PROXY) app.set('trust proxy', 1);
 app.use(express.json({ limit: '10mb' }));
 app.use('/api', api);
 

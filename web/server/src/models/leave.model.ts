@@ -28,9 +28,9 @@ export interface LeaveEntry {
 }
 
 /** SELECT list for `LeaveEntries l`. */
-export const LEAVE_COLUMNS = `l.Id, l.EmployeeId, l.LeaveTypeId, CONVERT(varchar(10), l.FromDate, 120) FromDate,
-  CONVERT(varchar(10), l.ToDate, 120) ToDate, l.IsHalfDay, l.Reason, l.Status, CONVERT(varchar(10), l.AppliedOn, 120) AppliedOn,
-  l.ApprovedBy, CONVERT(varchar(10), l.ApprovedOn, 120) ApprovedOn`;
+export const LEAVE_COLUMNS = `l.Id, l.EmployeeId, l.LeaveTypeId, to_char(l.FromDate, 'YYYY-MM-DD') AS FromDate,
+  to_char(l.ToDate, 'YYYY-MM-DD') AS ToDate, l.IsHalfDay, l.Reason, l.Status, to_char(l.AppliedOn, 'YYYY-MM-DD') AS AppliedOn,
+  l.ApprovedBy, to_char(l.ApprovedOn, 'YYYY-MM-DD') AS ApprovedOn`;
 
 export function toLeave(r: any, types?: Map<number, LeaveType>): LeaveEntry {
   return {

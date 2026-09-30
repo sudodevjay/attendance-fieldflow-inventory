@@ -87,9 +87,9 @@ export async function process(from: DT, to: DT, departmentId?: number | null, em
   const logs = new Map<string, DT[]>();
   if (employees.length) {
     const rows = await query<{ EnrollNo: string; t: string }>(
-      `SELECT a.EnrollNo, CONVERT(varchar(19), a.PunchTime, 120) t FROM AttendanceLogs a
-       WHERE a.PunchTime >= CONVERT(datetime2, @f, 120) AND a.PunchTime < CONVERT(datetime2, @t, 120)
-         AND a.EnrollNo IN (SELECT value FROM OPENJSON(@ids))`,
+      `SELECT a.EnrollNo, to_char(a.PunchTime, 'YYYY-MM-DD HH24:MI:SS') AS t FROM AttendanceLogs a
+       WHERE a.PunchTime >= CAST(@f AS timestamp) AND a.PunchTime < CAST(@t AS timestamp)
+         AND a.EnrollNo = ANY(@ids)`,
       { f: sqlDT(addDays(from, -1)), t: sqlDT(addDays(to, 2)), ids: employees.map((e) => e.EnrollNo) });
     for (const r of rows) {
       const list = logs.get(r.EnrollNo) ?? [];
@@ -105,8 +105,8 @@ export async function process(from: DT, to: DT, departmentId?: number | null, em
   const quotaHolidays = new Set((await loadHolidays(yearStart, to)).keys());
   const empIds = employees.map((e) => e.Id);
   const leaveRows = empIds.length
-    ? await query(`SELECT ${LEAVE_COLUMNS} FROM LeaveEntries l WHERE l.EmployeeId IN (SELECT value FROM OPENJSON(@ids))
-        AND l.FromDate <= CONVERT(datetime2, @to, 120) AND l.ToDate >= CONVERT(datetime2, @ys, 120) AND l.Status IN (0, 1)`,
+    ? await query(`SELECT ${LEAVE_COLUMNS} FROM LeaveEntries l WHERE l.EmployeeId = ANY(@ids)
+        AND l.FromDate <= CAST(@to AS timestamp) AND l.ToDate >= CAST(@ys AS timestamp) AND l.Status IN (0, 1)`,
       { ids: empIds, to: sqlDT(to), ys: sqlDT(yearStart) })
     : [];
   const all = leaveRows.map((r) => toLeave(r, types));

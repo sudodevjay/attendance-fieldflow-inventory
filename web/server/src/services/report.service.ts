@@ -150,7 +150,7 @@ async function requestsReport(title: string, from: DT, to: DT, departmentId: num
 /** Comp-off earned, used, pending, expired and available per employee (today). */
 async function compOffReport(title: string, departmentId: number | null, employeeId: number | null): Promise<ReportResult> {
   const emps = await query(`SELECT e.Id, e.EnrollNo, e.Name, d.Name Department FROM Employees e LEFT JOIN Departments d ON d.Id = e.DepartmentId
-    WHERE e.IsActive = 1 AND (@d IS NULL OR e.DepartmentId = @d) AND (@e IS NULL OR e.Id = @e)`, { d: departmentId, e: employeeId });
+    WHERE e.IsActive = TRUE AND (CAST(@d AS int) IS NULL OR e.DepartmentId = @d) AND (CAST(@e AS int) IS NULL OR e.Id = @e)`, { d: departmentId, e: employeeId });
   const rows: (string | number)[][] = [];
   let expiry = 90;
   for (const e of emps.sort(byEnroll)) {

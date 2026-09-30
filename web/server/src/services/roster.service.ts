@@ -16,7 +16,7 @@ export async function grid(from: DT, to: DT, departmentId: number | null) {
   if ((to - from) / 86_400_000 > 62) throw new UserError('The roster shows at most 62 days at a time.');
   const ids = departmentId ? await withChildren(departmentId) : null;
   const emps = (await query(`SELECT e.Id, e.EnrollNo, e.Name, e.ShiftId, e.DepartmentId, d.Name Department FROM Employees e
-      LEFT JOIN Departments d ON d.Id = e.DepartmentId WHERE e.IsActive = 1`))
+      LEFT JOIN Departments d ON d.Id = e.DepartmentId WHERE e.IsActive = TRUE`))
     .filter((r) => !ids || (r.DepartmentId !== null && ids.includes(r.DepartmentId))).sort(byEnroll);
   const shifts = await loadShifts();
   const byId = new Map(shifts.map((s) => [s.Id, s]));
@@ -54,11 +54,9 @@ export async function setCells(cells: RosterCell[]) {
       const off = c.value === OFF;
       const shift = off || c.value === '' ? null : Number(c.value);
       if (shift !== null && !shiftIds.has(shift)) throw new UserError('Unknown shift.');
-      if (!off && shift === null) await exec('DELETE FROM ShiftRoster WHERE EmployeeId = @e AND [Date] = @d', { e: c.employeeId, d }, tx);
-      else await exec(`MERGE ShiftRoster AS t USING (SELECT @e EmployeeId, CONVERT(date, @d) [Date]) AS s
-          ON t.EmployeeId = s.EmployeeId AND t.[Date] = s.[Date]
-        WHEN MATCHED THEN UPDATE SET ShiftId = @s, IsOff = @off
-        WHEN NOT MATCHED THEN INSERT (EmployeeId, [Date], ShiftId, IsOff) VALUES (@e, CONVERT(date, @d), @s, @off);`,
+      if (!off && shift === null) await exec('DELETE FROM ShiftRoster WHERE EmployeeId = @e AND Date = @d', { e: c.employeeId, d }, tx);
+      else await exec(`INSERT INTO ShiftRoster (EmployeeId, Date, ShiftId, IsOff) VALUES (@e, CAST(@d AS date), @s, @off)
+        ON CONFLICT (EmployeeId, Date) DO UPDATE SET ShiftId = EXCLUDED.ShiftId, IsOff = EXCLUDED.IsOff`,
       { e: c.employeeId, d, s: shift, off }, tx);
     }
   });
@@ -101,7 +99,7 @@ export async function rotate(b: RotationInput) {
 /** Removes the plan of these employees in [from, to] (they go back to their own shift). */
 export async function clear(employeeIds: number[], from: DT, to: DT) {
   if (!employeeIds.length) throw new UserError('Select employees first.');
-  const n = await exec(`DELETE FROM ShiftRoster WHERE EmployeeId IN (SELECT value FROM OPENJSON(@ids)) AND [Date] >= @f AND [Date] <= @t`,
+  const n = await exec(`DELETE FROM ShiftRoster WHERE EmployeeId = ANY(@ids) AND Date >= @f AND Date <= @t`,
     { ids: employeeIds, f: sqlD(from), t: sqlD(to) });
   return `${n} roster day(s) removed.`;
 }

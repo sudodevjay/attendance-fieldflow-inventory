@@ -15,7 +15,7 @@ export async function teamIds(managerId: number): Promise<number[]> {
   if (!acc?.IsManager) return [];
   const m = await one('SELECT DepartmentId FROM Employees WHERE Id = @id', { id: managerId });
   const depts = m?.DepartmentId ? await withChildren(m.DepartmentId) : null;
-  const rows = await query('SELECT Id, DepartmentId FROM Employees WHERE IsActive = 1 AND Id <> @id', { id: managerId });
+  const rows = await query('SELECT Id, DepartmentId FROM Employees WHERE IsActive = TRUE AND Id <> @id', { id: managerId });
   // Employees with their own reporting manager are that manager's, not the department's.
   const reporting = new Set((await query('SELECT EmployeeId FROM EmployeeProfiles WHERE ReportingManagerId IS NOT NULL')).map((r) => r.EmployeeId));
   return rows.filter((r) => !reporting.has(r.Id) && (!depts || (r.DepartmentId !== null && depts.includes(r.DepartmentId)))).map((r) => r.Id);
@@ -32,7 +32,7 @@ export async function approversOf(employeeId: number): Promise<number[]> {
   const p = await one(`SELECT p.ReportingManagerId m FROM EmployeeProfiles p JOIN PortalAccounts a ON a.EmployeeId = p.ReportingManagerId
     WHERE p.EmployeeId = @id`, { id: employeeId });
   if (p?.m) return [p.m];
-  const managers = await query('SELECT EmployeeId FROM PortalAccounts WHERE IsManager = 1 AND EmployeeId <> @id', { id: employeeId });
+  const managers = await query('SELECT EmployeeId FROM PortalAccounts WHERE IsManager = TRUE AND EmployeeId <> @id', { id: employeeId });
   const out: number[] = [];
   for (const m of managers) if ((await teamIds(m.EmployeeId)).includes(employeeId)) out.push(m.EmployeeId);
   return out;

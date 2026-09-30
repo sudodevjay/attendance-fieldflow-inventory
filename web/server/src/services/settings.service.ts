@@ -3,20 +3,19 @@ import { exec, one, query } from '../config/db';
 import { UserError } from '../utils/errors';
 
 export async function getSetting(key: string, fallback = ''): Promise<string> {
-  const r = await one<{ Value: string }>('SELECT [Value] FROM AppSettings WHERE [Key] = @k', { k: key });
+  const r = await one<{ Value: string }>('SELECT Value FROM AppSettings WHERE Key = @k', { k: key });
   return r?.Value ?? fallback;
 }
 
 export async function getSettings(prefix: string): Promise<Record<string, string>> {
   const rows = await query<{ Key: string; Value: string }>(
-    "SELECT [Key], [Value] FROM AppSettings WHERE [Key] LIKE @p + '%'", { p: prefix });
+    "SELECT Key, Value FROM AppSettings WHERE Key LIKE @p || '%'", { p: prefix });
   return Object.fromEntries(rows.map((r) => [r.Key, r.Value]));
 }
 
 export async function setSetting(key: string, value: string) {
   await exec(
-    `IF EXISTS (SELECT 1 FROM AppSettings WHERE [Key] = @k) UPDATE AppSettings SET [Value] = @v WHERE [Key] = @k
-     ELSE INSERT INTO AppSettings ([Key], [Value]) VALUES (@k, @v)`, { k: key, v: value.slice(0, 500) });
+    `INSERT INTO AppSettings (Key, Value) VALUES (@k, @v) ON CONFLICT (Key) DO UPDATE SET Value = EXCLUDED.Value`, { k: key, v: value.slice(0, 500) });
 }
 
 export const companyName = () => getSetting('CompanyName', 'My Company');
@@ -32,15 +31,14 @@ export async function companyProfile(): Promise<Record<(typeof COMPANY_FIELDS)[n
 
 /** Logo as a data URL (WebBlobs), '' when none. */
 export async function companyLogo(): Promise<string> {
-  return (await one<{ Value: string }>("SELECT Value FROM WebBlobs WHERE [Key] = 'CompanyLogo'"))?.Value ?? '';
+  return (await one<{ Value: string }>("SELECT Value FROM WebBlobs WHERE Key = 'CompanyLogo'"))?.Value ?? '';
 }
 
 export async function saveCompanyLogo(dataUrl: string) {
-  if (!dataUrl) return void (await exec("DELETE FROM WebBlobs WHERE [Key] = 'CompanyLogo'"));
+  if (!dataUrl) return void (await exec("DELETE FROM WebBlobs WHERE Key = 'CompanyLogo'"));
   if (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(dataUrl)) throw new UserError('The logo must be a PNG or JPG picture.');
   if (dataUrl.length > 700_000) throw new UserError('The logo is too large (max. about 500 KB).');
-  await exec(`MERGE WebBlobs AS t USING (SELECT 'CompanyLogo' k) AS s ON t.[Key] = s.k
-    WHEN MATCHED THEN UPDATE SET Value = @v WHEN NOT MATCHED THEN INSERT ([Key], Value) VALUES ('CompanyLogo', @v);`, { v: dataUrl });
+  await exec(`INSERT INTO WebBlobs (Key, Value) VALUES ('CompanyLogo', @v) ON CONFLICT (Key) DO UPDATE SET Value = EXCLUDED.Value`, { v: dataUrl });
 }
 
 /** Company-wide attendance rules (Attendance Rule dialog). */

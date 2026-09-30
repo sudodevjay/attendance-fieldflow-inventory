@@ -12,7 +12,7 @@ import { commandsOf, piLastSeen, piOnline, piSerials, queueCommand } from './pi.
 export const KIND_NAMES = ['USB', 'Serial Port/RS485', 'Ethernet', 'ADMS (Push / Cloud)'];
 
 const COLUMNS = `Id, Name, Kind, MachineNumber, ComPort, BaudRate, IpAddress, TcpPort, CommPassword, ProductName, SerialNumber, Firmware,
-  UserCount, AdminCount, FpCount, FaceCount, PasswordCount, LogCount, CONVERT(varchar(19), LastDownload, 120) LastDownload`;
+  UserCount, AdminCount, FpCount, FaceCount, PasswordCount, LogCount, to_char(LastDownload, 'YYYY-MM-DD HH24:MI:SS') AS LastDownload`;
 
 /** A Machine List row: the profile plus how it is reached and its status. */
 function toRow(p: any, pis: Set<string>) {
@@ -66,7 +66,7 @@ function params(b: DeviceInput) {
 
 export async function create(b: DeviceInput) {
   const r = await one(`INSERT INTO DeviceProfiles (Name, Kind, MachineNumber, ComPort, BaudRate, IpAddress, TcpPort, CommPassword, SerialNumber)
-    OUTPUT INSERTED.Id VALUES (@n, @k, @m, @com, @baud, @ip, @port, @key, @sn)`, params(b));
+    VALUES (@n, @k, @m, @com, @baud, @ip, @port, @key, @sn) RETURNING Id`, params(b));
   return r!.Id as number;
 }
 
@@ -78,7 +78,7 @@ export async function update(id: number, b: DeviceInput) {
 /** Removes devices from the Machine List; their attendance stays in the database. */
 export async function removeMany(ids: number[]) {
   if (!ids.length) throw new UserError('Select a device first.');
-  await exec('DELETE FROM DeviceProfiles WHERE Id IN (SELECT value FROM OPENJSON(@ids))', { ids });
+  await exec('DELETE FROM DeviceProfiles WHERE Id = ANY(@ids)', { ids });
 }
 
 const windowsOnly = (name: string, what: string) =>

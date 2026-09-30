@@ -1,0 +1,26 @@
+# Render blueprint: the web version (React app + Node API in one service) on the free plan.
+# The database is Supabase PostgreSQL (free); put its Session pooler URL in DATABASE_URL. See web/DEPLOY.md.
+services:
+  - type: web
+    name: zk-attendance
+    runtime: node
+    plan: free
+    # Same region as the Supabase project (Southeast Asia, Singapore): every page runs many small queries.
+    region: singapore
+    rootDir: web
+    buildCommand: npm run install:all && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/auth/status
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Local time of the office: "today", punches and reports use it.
+      - key: TZ
+        value: Asia/Kolkata
+      # postgresql://postgres.<project>:<password>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
+      - key: DATABASE_URL
+        sync: false
+      # First administrator password (only used while none is set; change it later in the program).
+      - key: ADMIN_PASSWORD
+        sync: false

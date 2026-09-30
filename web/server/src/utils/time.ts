@@ -78,6 +78,6 @@ export function fmt(t: DT, pattern: string): string {
   });
 }
 
-/** Value for a datetime2 parameter: CONVERT(datetime2, @p, 120). */
+/** Value for a datetime2 parameter: CAST(@p AS timestamp). */
 export const sqlDT = (t: DT) => fmt(t, 'yyyy-MM-dd HH:mm:ss');
 export const sqlD = (t: DT) => fmt(t, 'yyyy-MM-dd');

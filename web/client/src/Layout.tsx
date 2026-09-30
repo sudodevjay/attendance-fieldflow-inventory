@@ -121,7 +121,7 @@ export function Layout() {
         if (await app.confirm('Are you sure you want to exit Attendance Management Program?')) app.logout();
         return;
       }
-      case 'about': return app.alert('Attendance Management Program (web)\n\nReact + Tailwind CSS, Node.js + TypeScript, SQL Server (same database as the Windows program).\nDevices: ZKTeco LX50 through a Raspberry Pi; pendrive file import.');
+      case 'about': return app.alert('Attendance Management Program (web)\n\nReact + Tailwind CSS, Node.js + TypeScript, PostgreSQL (own database, Supabase in the cloud).\nDevices: ZKTeco LX50 through a Raspberry Pi; pendrive file import.');
       case 'noPhoto':
       case 'noAccess': return app.alert('ZKTeco LX50 has no camera / access control, so this option is not available for this device.');
       default: return setOpen({ kind: a });

@@ -2,8 +2,7 @@
  * HR profile of an employee (EmployeeProfiles, web only): reporting manager, emergency contact, personal details, bank
  * account, statutory numbers (PAN, Aadhaar, UAN, PF, ESI) and which statutory deductions apply (PF / ESI / PT, monthly TDS).
  */
-import type * as MSSQL from 'mssql';
-import { exec, one, query } from '../config/db';
+import { exec, one, query, type Tx } from '../config/db';
 import { UserError } from '../utils/errors';
 
 export interface Profile {
@@ -48,7 +47,7 @@ export async function getProfile(employeeId: number): Promise<Profile> {
 export async function getProfiles(employeeIds: number[]): Promise<Map<number, Profile>> {
   if (!employeeIds.length) return new Map();
   const rows = await query(`SELECT p.EmployeeId, ${COLUMNS} FROM EmployeeProfiles p LEFT JOIN Employees m ON m.Id = p.ReportingManagerId
-    WHERE p.EmployeeId IN (SELECT value FROM OPENJSON(@ids))`, { ids: employeeIds });
+    WHERE p.EmployeeId = ANY(@ids)`, { ids: employeeIds });
   return new Map(rows.map((r) => [r.EmployeeId as number, toProfile(r)]));
 }
 
@@ -83,7 +82,7 @@ export function checkProfileFields(b: Record<string, unknown>): Record<string, s
  * Saves the given fields of the profile (fields left out keep their value). `ReportingManagerId` must be another active
  * employee and must not make a circle (A reports to B, B reports to A).
  */
-export async function saveProfile(employeeId: number, b: Record<string, unknown>, tx?: MSSQL.Transaction) {
+export async function saveProfile(employeeId: number, b: Record<string, unknown>, tx?: Tx) {
   const set: string[] = [];
   const p: Record<string, unknown> = { id: employeeId };
   for (const [k, v] of Object.entries(checkProfileFields(b))) {
@@ -113,25 +112,25 @@ export async function saveProfile(employeeId: number, b: Record<string, unknown>
     p.ReportingManagerId = m;
   }
   if (!set.length) return;
-  await exec(`IF NOT EXISTS (SELECT 1 FROM EmployeeProfiles WHERE EmployeeId = @id) INSERT INTO EmployeeProfiles (EmployeeId) VALUES (@id);
-    UPDATE EmployeeProfiles SET ${set.join(', ')}, UpdatedAt = SYSDATETIME() WHERE EmployeeId = @id`, p, tx);
+  await exec(`INSERT INTO EmployeeProfiles (EmployeeId) VALUES (@id) ON CONFLICT (EmployeeId) DO NOTHING;
+    UPDATE EmployeeProfiles SET ${set.join(', ')}, UpdatedAt = LOCALTIMESTAMP WHERE EmployeeId = @id`, p, tx);
 }
 
 /** Employees who report directly to this one (active only). */
 export async function directReports(managerId: number): Promise<number[]> {
   const rows = await query(`SELECT p.EmployeeId FROM EmployeeProfiles p JOIN Employees e ON e.Id = p.EmployeeId
-    WHERE p.ReportingManagerId = @m AND e.IsActive = 1`, { m: managerId });
+    WHERE p.ReportingManagerId = @m AND e.IsActive = TRUE`, { m: managerId });
   return rows.map((r) => r.EmployeeId);
 }
 
 /** Bank account for display to the employee: only the last 4 digits. */
 export const maskAccount = (a: string) => (a.length > 4 ? '•'.repeat(Math.min(8, a.length - 4)) + a.slice(-4) : a);
 
-export async function removeProfiles(ids: number[], tx?: MSSQL.Transaction) {
-  await exec(`DELETE FROM EmployeeProfiles WHERE EmployeeId IN (SELECT value FROM OPENJSON(@ids));
-    UPDATE EmployeeProfiles SET ReportingManagerId = NULL WHERE ReportingManagerId IN (SELECT value FROM OPENJSON(@ids));
-    DELETE FROM EmployeeDocuments WHERE EmployeeId IN (SELECT value FROM OPENJSON(@ids));
-    DELETE FROM EmployeeSalaryComponents WHERE EmployeeId IN (SELECT value FROM OPENJSON(@ids));
-    DELETE FROM ShiftRoster WHERE EmployeeId IN (SELECT value FROM OPENJSON(@ids));
-    DELETE FROM Notifications WHERE EmployeeId IN (SELECT value FROM OPENJSON(@ids))`, { ids }, tx);
+export async function removeProfiles(ids: number[], tx?: Tx) {
+  await exec(`DELETE FROM EmployeeProfiles WHERE EmployeeId = ANY(@ids);
+    UPDATE EmployeeProfiles SET ReportingManagerId = NULL WHERE ReportingManagerId = ANY(@ids);
+    DELETE FROM EmployeeDocuments WHERE EmployeeId = ANY(@ids);
+    DELETE FROM EmployeeSalaryComponents WHERE EmployeeId = ANY(@ids);
+    DELETE FROM ShiftRoster WHERE EmployeeId = ANY(@ids);
+    DELETE FROM Notifications WHERE EmployeeId = ANY(@ids)`, { ids }, tx);
 }

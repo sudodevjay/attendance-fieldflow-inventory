@@ -7,8 +7,8 @@ export interface RosterDay { ShiftId: number | null; IsOff: boolean }
 /** Roster days of these employees in [from, to], keyed `${employeeId}|${date}`. */
 export async function loadRoster(from: DT, to: DT, employeeIds: number[]): Promise<Map<string, RosterDay>> {
   if (!employeeIds.length) return new Map();
-  const rows = await query(`SELECT EmployeeId, CONVERT(varchar(10), [Date], 120) d, ShiftId, IsOff FROM ShiftRoster
-    WHERE [Date] >= @f AND [Date] <= @t AND EmployeeId IN (SELECT value FROM OPENJSON(@ids))`,
+  const rows = await query(`SELECT EmployeeId, to_char(Date, 'YYYY-MM-DD') AS d, ShiftId, IsOff FROM ShiftRoster
+    WHERE Date >= @f AND Date <= @t AND EmployeeId = ANY(@ids)`,
   { f: sqlD(from), t: sqlD(to), ids: employeeIds });
   return new Map(rows.map((r) => [rosterKey(r.EmployeeId, parse(r.d)!), { ShiftId: r.ShiftId ?? null, IsOff: !!r.IsOff }]));
 }

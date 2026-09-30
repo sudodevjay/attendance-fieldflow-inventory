@@ -1,9 +1,9 @@
 """End-to-end test: web server <-> Raspberry Pi code (pi/lx50pi) <-> fake LX50, on a COPY of the database.
 
-    python web/test/e2e_pi.py            (from the repository root; SQL Server with database ZkAttendanceTest)
+    python web/test/e2e_pi.py            (from the repository root; test PostgreSQL from make_test_db.ps1)
 
 Creates nothing in the real ZkAttendance database. Steps:
-  1. web server on port 4001 against ZkAttendanceTest
+  1. web server on port 4001 against the test PostgreSQL database
   2. lx50pi's fake device (simulator, UDP) + one lx50pi service cycle -> punches and the user list reach the server
   3. web "Upload" of an employee -> Pi command -> fake device has the user -> result reported
   4. web "Del(Device)" -> Pi command -> user gone; web "Download user info" merges the Pi's user list
@@ -23,8 +23,7 @@ from lx50pi.service import Service, load_config  # noqa: E402
 
 PORT = 4001
 BASE = f'http://localhost:{PORT}/api'
-CS = ('Driver={ODBC Driver 18 for SQL Server};Server=.\\SQLEXPRESS;Database=ZkAttendanceTest;'
-      'Trusted_Connection=yes;TrustServerCertificate=yes;')
+CS = os.environ.get('ZK_TEST_DATABASE_URL', 'postgresql://postgres:zkpass@localhost:5433/zkattendance_test')
 
 
 def call(method, path, body=None):
@@ -41,7 +40,7 @@ def check(cond, what):
 
 
 def main():
-    env = dict(os.environ, PORT=str(PORT), ZK_CONNECTION_STRING=CS)
+    env = dict(os.environ, PORT=str(PORT), DATABASE_URL=CS, TZ='Asia/Kolkata')
     server = subprocess.Popen('npx tsx src/server.ts', cwd=os.path.join(ROOT, 'web', 'server'), env=env, shell=True,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:

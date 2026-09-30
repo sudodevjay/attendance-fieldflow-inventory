@@ -47,7 +47,7 @@ export async function login(enrollNo: string, password: string) {
     WHERE e.EnrollNo = @e`, { e: enrollNo.trim() });
   if (!acc || !checkPassword(password, acc.PasswordHash)) throw new UserError('Wrong AC No or password.', 401);
   if (!acc.IsActive) throw new UserError('Your employee record is inactive. Please contact HR.', 403);
-  await exec('UPDATE PortalAccounts SET LastLogin = SYSDATETIME() WHERE EmployeeId = @id', { id: acc.EmployeeId });
+  await exec('UPDATE PortalAccounts SET LastLogin = LOCALTIMESTAMP WHERE EmployeeId = @id', { id: acc.EmployeeId });
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, { employeeId: acc.EmployeeId, expires: Date.now() + TTL });
   return { token, mustChange: !!acc.MustChange };
@@ -58,5 +58,5 @@ export async function changePassword(employeeId: number, current: string, next: 
   if (!acc || !checkPassword(current, acc.PasswordHash)) throw new UserError('The current password is incorrect.');
   if (next.length < 6) throw new UserError('The new password must have at least 6 characters.');
   if (next !== confirm) throw new UserError('The passwords do not match.');
-  await exec('UPDATE PortalAccounts SET PasswordHash = @h, MustChange = 0 WHERE EmployeeId = @id', { h: hashPassword(next), id: employeeId });
+  await exec('UPDATE PortalAccounts SET PasswordHash = @h, MustChange = FALSE WHERE EmployeeId = @id', { h: hashPassword(next), id: employeeId });
 }

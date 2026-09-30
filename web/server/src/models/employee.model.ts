@@ -28,8 +28,8 @@ export interface Employee {
 }
 
 /** SELECT list for `Employees e LEFT JOIN Departments d`. */
-export const EMPLOYEE_COLUMNS = `e.Id, e.EnrollNo, e.Name, e.Designation, e.Phone, CONVERT(varchar(10), e.JoinDate, 120) JoinDate,
-  CONVERT(varchar(10), e.BirthDate, 120) BirthDate, e.BadgeNo, e.Gender, e.Nationality, e.OfficeTel, e.HomeAddress, e.Email,
+export const EMPLOYEE_COLUMNS = `e.Id, e.EnrollNo, e.Name, e.Designation, e.Phone, to_char(e.JoinDate, 'YYYY-MM-DD') AS JoinDate,
+  to_char(e.BirthDate, 'YYYY-MM-DD') AS BirthDate, e.BadgeNo, e.Gender, e.Nationality, e.OfficeTel, e.HomeAddress, e.Email,
   e.DepartmentId, d.Name DepartmentName, e.ShiftId, e.Privilege, e.DevicePassword, e.CardNo,
   CAST(e.MonthlySalary AS float) MonthlySalary, CAST(e.OtRatePerHour AS float) OtRatePerHour, e.IsActive`;
 
@@ -44,7 +44,7 @@ export const byEnroll = <T extends { EnrollNo: string }>(a: T, b: T) =>
 
 /** Active employees, optionally one department (exactly that one, as the reports do) or one employee. */
 export async function loadEmployees(opts: { departmentId?: number | null; employeeId?: number | null; activeOnly?: boolean } = {}) {
-  const where = [opts.activeOnly === false ? '1=1' : 'e.IsActive = 1'];
+  const where = [opts.activeOnly === false ? '1=1' : 'e.IsActive = TRUE'];
   if (opts.departmentId) where.push('e.DepartmentId = @dept');
   if (opts.employeeId) where.push('e.Id = @emp');
   const rows = await query(`SELECT ${EMPLOYEE_COLUMNS} FROM Employees e LEFT JOIN Departments d ON d.Id = e.DepartmentId

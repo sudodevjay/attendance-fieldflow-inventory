@@ -26,11 +26,11 @@ export const hasPassword = async () => (await getSetting(KEY)) !== '';
 
 export async function login(user: string, password: string, local: boolean) {
   const name = user.trim() || 'Supervisor';
-  const account = await one('SELECT Id, UserName, PasswordHash, Role, IsActive FROM AdminUsers WHERE UserName = @u', { u: name });
+  const account = await one('SELECT Id, UserName, PasswordHash, Role, IsActive FROM AdminUsers WHERE lower(UserName) = lower(@u)', { u: name });
   let session: AdminSession;
   if (account && checkPassword(password, account.PasswordHash)) {
     if (!account.IsActive) throw new UserError('This user is disabled.', 403);
-    await exec('UPDATE AdminUsers SET LastLogin = SYSDATETIME() WHERE Id = @id', { id: account.Id });
+    await exec('UPDATE AdminUsers SET LastLogin = LOCALTIMESTAMP WHERE Id = @id', { id: account.Id });
     session = { user: account.UserName, role: isRole(account.Role) ? account.Role : 'Viewer', userId: account.Id };
   } else {
     if (!(await hasPassword()) && !local) throw new UserError(NO_PASSWORD_REMOTE, 403);
@@ -55,6 +55,11 @@ export const logout = (token: string) => sessions.delete(token);
 /** Ends the sessions of a role user (changed, disabled or deleted). */
 export function endUserSessions(userId: number) {
   for (const [k, s] of sessions) if (s.userId === userId) sessions.delete(k);
+}
+
+/** First Supervisor password (ADMIN_PASSWORD on Render), only while there is none. */
+export async function setInitialPassword(password: string) {
+  if (!(await hasPassword()) && password) await setSetting(KEY, hash(password));
 }
 
 export async function changePassword(current: string, next: string, confirm: string) {

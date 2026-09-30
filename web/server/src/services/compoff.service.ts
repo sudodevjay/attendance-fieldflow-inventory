@@ -38,7 +38,7 @@ interface Credit { date: DT; expires: DT; days: number; left: number }
 /** Credits (approved requests) and CO leave (approved + pending) of an employee, matched FIFO. */
 export async function balance(employeeId: number) {
   const expiry = await expiryDays();
-  const creditRows = await query(`SELECT CONVERT(varchar(10), RequestDate, 120) d, CAST(Amount AS float) a FROM EmployeeRequests
+  const creditRows = await query(`SELECT to_char(RequestDate, 'YYYY-MM-DD') AS d, CAST(Amount AS float) a FROM EmployeeRequests
     WHERE EmployeeId = @e AND Type = 'CompOff' AND Status = 1 ORDER BY RequestDate`, { e: employeeId });
   const credits: Credit[] = creditRows.map((r) => {
     const date = parse(r.d)!;

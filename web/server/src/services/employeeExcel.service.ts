@@ -10,9 +10,9 @@ const COLUMNS = ['AC No', 'Name', 'No.', 'Gender', 'Title', 'Mobile', 'Card', 'D
 
 export async function exportEmployees(ids: number[]) {
   const rows = await query(`SELECT e.EnrollNo, e.Name, e.BadgeNo, e.Gender, e.Designation, e.Phone, e.CardNo, d.Name Dept, s.Name Shift,
-      CONVERT(varchar(10), e.JoinDate, 120) JoinDate, CAST(e.MonthlySalary AS float) Sal, CAST(e.OtRatePerHour AS float) Ot
+      to_char(e.JoinDate, 'YYYY-MM-DD') AS JoinDate, CAST(e.MonthlySalary AS float) Sal, CAST(e.OtRatePerHour AS float) Ot
     FROM Employees e LEFT JOIN Departments d ON d.Id = e.DepartmentId LEFT JOIN Shifts s ON s.Id = e.ShiftId
-    WHERE e.Id IN (SELECT value FROM OPENJSON(@ids))`, { ids });
+    WHERE e.Id = ANY(@ids)`, { ids });
   rows.sort(byEnroll);
   const buffer = await excel({
     title: 'Employee List', subtitle: `${rows.length} employees`, columns: COLUMNS, statusColumns: [],
@@ -66,7 +66,7 @@ export async function importEmployees(file: Buffer): Promise<string> {
 
   const depts = await query<{ Id: number; Name: string }>('SELECT Id, Name FROM Departments');
   const shifts = await query<{ Id: number; Name: string }>('SELECT Id, Name FROM Shifts');
-  const firstShift = (await one('SELECT TOP 1 Id FROM Shifts ORDER BY Id'))?.Id ?? null;
+  const firstShift = (await one('SELECT Id FROM Shifts ORDER BY Id LIMIT 1'))?.Id ?? null;
   const existing = new Map((await query('SELECT Id, EnrollNo, Name FROM Employees')).map((e) => [e.EnrollNo, e]));
   let added = 0, updated = 0;
 
@@ -79,7 +79,7 @@ export async function importEmployees(file: Buffer): Promise<string> {
       let id = existing.get(ac)?.Id as number | undefined;
       if (!id) {
         id = (await one(`INSERT INTO Employees (EnrollNo, Name, ShiftId, Privilege, IsActive, MonthlySalary, OtRatePerHour)
-          OUTPUT INSERTED.Id VALUES (@e, @n, @s, 0, 1, 0, 0)`, { e: ac, n: `User ${ac}`, s: firstShift }, tx))!.Id;
+          VALUES (@e, @n, @s, 0, TRUE, 0, 0) RETURNING Id`, { e: ac, n: `User ${ac}`, s: firstShift }, tx))!.Id;
         existing.set(ac, { Id: id, EnrollNo: ac, Name: `User ${ac}` });
         added++;
       } else updated++;
@@ -97,7 +97,7 @@ export async function importEmployees(file: Buffer): Promise<string> {
       const jt = get(c.join);
       const jm = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(jt);
       const jv = c.join > 0 ? row.getCell(c.join).value : null;
-      const joinSet = 'JoinDate = CONVERT(datetime2, @j, 120)';
+      const joinSet = 'JoinDate = CAST(@j AS timestamp)';
       if (jm) put(joinSet, 'j', `${jm[3]}-${jm[2].padStart(2, '0')}-${jm[1].padStart(2, '0')}`);
       else if (/^\d{4}-\d{2}-\d{2}$/.test(jt)) put(joinSet, 'j', jt);
       else if (jv instanceof Date) put(joinSet, 'j', sqlD(make(jv.getUTCFullYear(), jv.getUTCMonth() + 1, jv.getUTCDate())));
@@ -112,13 +112,13 @@ export async function importEmployees(file: Buffer): Promise<string> {
       if (dn) {
         let dep = depts.find((d) => d.Name.toLowerCase() === dn.toLowerCase());
         if (!dep) {
-          dep = { Id: (await one('INSERT INTO Departments (Name) OUTPUT INSERTED.Id VALUES (@n)', { n: dn.slice(0, 100) }, tx))!.Id, Name: dn };
+          dep = { Id: (await one('INSERT INTO Departments (Name) VALUES (@n) RETURNING Id', { n: dn.slice(0, 100) }, tx))!.Id, Name: dn };
           depts.push(dep);
         }
         put('DepartmentId = @d', 'd', dep.Id);
       }
       if (sets.length) await exec(`UPDATE Employees SET ${sets.join(', ')} WHERE Id = @id`, p, tx);
-      if (!get(c.name)) await exec(`UPDATE Employees SET Name = 'User ' + EnrollNo WHERE Id = @id AND LTRIM(Name) = ''`, { id }, tx);
+      if (!get(c.name)) await exec(`UPDATE Employees SET Name = 'User ' || EnrollNo WHERE Id = @id AND LTRIM(Name) = ''`, { id }, tx);
     }
   });
   return `Import complete.\nNew: ${added}\nUpdated: ${updated}`;

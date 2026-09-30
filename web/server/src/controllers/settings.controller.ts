@@ -5,7 +5,7 @@ import * as settings from '../services/settings.service';
 import * as system from '../services/system.service';
 
 export const company = async (_req: Request, res: Response) =>
-  res.json({ ...(await settings.companySettings()), connectionString: system.currentConnectionString() });
+  res.json({ ...(await settings.companySettings()), connectionString: system.maskedConnectionString() });
 
 export async function saveCompany(req: Request, res: Response) {
   await settings.saveCompany(req.body);
@@ -23,8 +23,12 @@ export const testConnection = async (req: Request, res: Response) =>
 export const saveConnection = (req: Request, res: Response) =>
   res.json({ message: system.saveConnection(String(req.body.connectionString ?? '')) });
 
-export const backup = async (req: Request, res: Response) => res.json({ message: await system.backup(String(req.body.path ?? '')) });
-export const defaultBackup = (_req: Request, res: Response) => res.json({ path: system.defaultBackupPath() });
+export async function backup(_req: Request, res: Response) {
+  const { name, data } = await system.backup();
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+  res.send(data);
+}
 
 export const attendanceRule = async (_req: Request, res: Response) => res.json(await settings.loadAttendanceRules());
 

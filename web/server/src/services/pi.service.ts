@@ -42,15 +42,15 @@ export async function newPiToken() {
  * serial (the LX50 row of the Windows program), else a new row.
  */
 export async function profileFor(serial: string, name: string): Promise<{ Id: number; Name: string }> {
-  const bySerial = await one('SELECT TOP 1 Id, Name FROM DeviceProfiles WHERE SerialNumber = @s ORDER BY Id', { s: serial });
+  const bySerial = await one('SELECT Id, Name FROM DeviceProfiles WHERE SerialNumber = @s ORDER BY Id LIMIT 1', { s: serial });
   if (bySerial) return bySerial;
-  const free = await one("SELECT TOP 1 Id, Name FROM DeviceProfiles WHERE Kind = 0 AND (SerialNumber IS NULL OR SerialNumber = '') ORDER BY Id");
+  const free = await one("SELECT Id, Name FROM DeviceProfiles WHERE Kind = 0 AND (SerialNumber IS NULL OR SerialNumber = '') ORDER BY Id LIMIT 1");
   if (free) {
     await exec('UPDATE DeviceProfiles SET SerialNumber = @s WHERE Id = @id', { s: serial, id: free.Id });
     return free;
   }
   const created = await one(`INSERT INTO DeviceProfiles (Name, Kind, MachineNumber, ComPort, BaudRate, IpAddress, TcpPort, CommPassword, SerialNumber, ProductName)
-    OUTPUT INSERTED.Id, INSERTED.Name VALUES (@n, 0, 1, 'COM3', 115200, '', 4370, 0, @s, 'LX50')`, { n: name || 'LX50 (Pi)', s: serial });
+    VALUES (@n, 0, 1, 'COM3', 115200, '', 4370, 0, @s, 'LX50') RETURNING Id, Name`, { n: name || 'LX50 (Pi)', s: serial });
   return created!;
 }
 
@@ -64,7 +64,7 @@ export async function receivePunches(serial: string, deviceName: string, raw: Pi
     .map((x) => ({ enrollNo: String(x.user_id ?? ''), time: parse(String(x.time ?? ''))!, verifyMode: Number(x.verify) || 0, inOutMode: Number(x.state) || 0, workCode: 0 }))
     .filter((x) => x.time !== null && x.enrollNo);
   const r = await savePunches(punches, PunchSource.Device);
-  await exec('UPDATE DeviceProfiles SET LastDownload = CONVERT(datetime2, @t, 120) WHERE Id = @id', { t: sqlDT(now()), id: p.Id });
+  await exec('UPDATE DeviceProfiles SET LastDownload = CAST(@t AS timestamp) WHERE Id = @id', { t: sqlDT(now()), id: p.Id });
   const names = new Map((await query('SELECT EnrollNo, Name FROM Employees')).map((e) => [e.EnrollNo, e.Name]));
   addRecords(punches, names, p.Name);
   log(p.Id, `Download attendance logs: ${punches.length} record(s), new ${r.added}`);
@@ -82,7 +82,7 @@ export async function receiveUsers(serial: string, deviceName: string, raw: PiUs
   await exec('DELETE FROM PiDeviceUsers WHERE DeviceSerial = @s', { s: serial });
   if (users.length)
     await exec(`INSERT INTO PiDeviceUsers (DeviceSerial, UserId, Name, Privilege, Card)
-      SELECT @s, j.u, j.n, j.p, j.c FROM OPENJSON(@rows) WITH (u nvarchar(24), n nvarchar(100), p int, c bigint) j`, { s: serial, rows: users });
+      SELECT @s, j.u, j.n, j.p, j.c FROM json_to_recordset(CAST(@rows AS json)) AS j(u text, n text, p int, c bigint)`, { s: serial, rows: JSON.stringify(users) });
   await exec('UPDATE DeviceProfiles SET UserCount = @n, AdminCount = @a WHERE Id = @id',
     { n: users.length, a: users.filter((u) => u.p > 0).length, id: p.Id });
   log(p.Id, `User list from device: ${users.length} user(s)`);
@@ -93,7 +93,7 @@ export async function pendingCommands(serial: string) {
   const p = await profileFor(serial, '');
   if (seen(serial)) log(p.Id, 'Pi online');
   const rows = await query("SELECT Id, Body FROM PiCommands WHERE DeviceSerial = @s AND Status IN ('pending', 'sent') ORDER BY Id", { s: serial });
-  if (rows.length) await exec(`UPDATE PiCommands SET Status = 'sent' WHERE Status = 'pending' AND Id IN (SELECT value FROM OPENJSON(@ids))`, { ids: rows.map((r) => r.Id) });
+  if (rows.length) await exec(`UPDATE PiCommands SET Status = 'sent' WHERE Status = 'pending' AND Id = ANY(@ids)`, { ids: rows.map((r) => r.Id) });
   return rows.map((r) => ({ ...JSON.parse(r.Body), id: String(r.Id) }));
 }
 
@@ -103,7 +103,7 @@ export async function saveResult(id: number, result: { status?: unknown; error?:
   const row = await one('SELECT c.Id, c.Type, c.Body, c.DeviceSerial FROM PiCommands c WHERE c.Id = @id', { id });
   if (!row) return;
   const error = String(result.error ?? '').slice(0, 500);
-  await exec(`UPDATE PiCommands SET Status = @st, Error = @er, Result = @r, FinishedAt = SYSDATETIME() WHERE Id = @id`,
+  await exec(`UPDATE PiCommands SET Status = @st, Error = @er, Result = @r, FinishedAt = LOCALTIMESTAMP WHERE Id = @id`,
     { st: status, er: error || null, r: JSON.stringify(result ?? {}), id });
   const p = await profileFor(row.DeviceSerial, '');
   log(p.Id, `${status === 'done' ? 'Succeed' : 'failed'}: ${describe(row.Type, JSON.parse(row.Body))}${error ? ` (${error})` : ''}`);
@@ -121,15 +121,15 @@ export function describe(type: string, body: any) {
 
 /** Queues a command for the Pi of `serial`. */
 export async function queueCommand(serial: string, type: string, body: Record<string, unknown>, by: string) {
-  const r = await one(`INSERT INTO PiCommands (DeviceSerial, Type, Body, CreatedBy) OUTPUT INSERTED.Id VALUES (@s, @t, @b, @by)`,
+  const r = await one(`INSERT INTO PiCommands (DeviceSerial, Type, Body, CreatedBy) VALUES (@s, @t, @b, @by) RETURNING Id`,
     { s: serial, t: type, b: JSON.stringify({ type, ...body }), by });
   return r!.Id as number;
 }
 
 /** Commands of a device, newest first (Machine List → Pi commands). */
 export async function commandsOf(serial: string) {
-  const rows = await query(`SELECT TOP 100 Id, Type, Body, Status, Error, CONVERT(varchar(19), CreatedAt, 120) CreatedAt,
-      CONVERT(varchar(19), FinishedAt, 120) FinishedAt, CreatedBy FROM PiCommands WHERE DeviceSerial = @s ORDER BY Id DESC`, { s: serial });
+  const rows = await query(`SELECT Id, Type, Body, Status, Error, to_char(CreatedAt, 'YYYY-MM-DD HH24:MI:SS') AS CreatedAt,
+      to_char(FinishedAt, 'YYYY-MM-DD HH24:MI:SS') AS FinishedAt, CreatedBy FROM PiCommands WHERE DeviceSerial = @s ORDER BY Id DESC LIMIT 100`, { s: serial });
   return rows.map((r) => ({ ...r, What: describe(r.Type, JSON.parse(r.Body)), Body: undefined }));
 }
 

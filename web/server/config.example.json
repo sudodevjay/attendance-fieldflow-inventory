@@ -1,4 +1,5 @@
 {
   "port": 4000,
-  "connectionString": "Driver={ODBC Driver 18 for SQL Server};Server=.\\SQLEXPRESS;Database=ZkAttendance;Trusted_Connection=yes;TrustServerCertificate=yes;"
+  "connectionString": "postgresql://postgres:postgres@localhost:5432/zkattendance",
+  "publicUrl": ""
 }

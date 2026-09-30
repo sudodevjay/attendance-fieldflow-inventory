@@ -1,5 +1,5 @@
 /** Maintenance Timetables (shifts) and Employee Schedule (bulk shift assignment). */
-import { exec, one, query, transaction } from '../config/db';
+import { exec, one, query, transaction, type Tx } from '../config/db';
 import type * as MSSQL from 'mssql';
 import { byEnroll, crossesMidnight, durationMinutes, hhmm, loadShifts, shiftLabel, workMinutes } from '../models';
 import { UserError } from '../utils/errors';
@@ -60,11 +60,11 @@ function breakParams(b: ShiftInput) {
   return { bm: minutes, bs, be, db: b.DeductBreak !== false };
 }
 
-async function saveBreak(id: number, b: ShiftInput, tx: MSSQL.Transaction) {
-  await exec(`MERGE ShiftExtras AS t USING (SELECT @id ShiftId) AS s ON t.ShiftId = s.ShiftId
-    WHEN MATCHED THEN UPDATE SET BreakMinutes = @bm, BreakStart = CONVERT(time, @bs), BreakEnd = CONVERT(time, @be), DeductBreak = @db
-    WHEN NOT MATCHED THEN INSERT (ShiftId, BreakMinutes, BreakStart, BreakEnd, DeductBreak)
-      VALUES (@id, @bm, CONVERT(time, @bs), CONVERT(time, @be), @db);`, { id, ...breakParams(b) }, tx);
+async function saveBreak(id: number, b: ShiftInput, tx: Tx) {
+  await exec(`INSERT INTO ShiftExtras (ShiftId, BreakMinutes, BreakStart, BreakEnd, DeductBreak)
+      VALUES (@id, @bm, CAST(@bs AS time), CAST(@be AS time), @db)
+    ON CONFLICT (ShiftId) DO UPDATE SET BreakMinutes = EXCLUDED.BreakMinutes, BreakStart = EXCLUDED.BreakStart,
+      BreakEnd = EXCLUDED.BreakEnd, DeductBreak = EXCLUDED.DeductBreak`, { id, ...breakParams(b) }, tx);
 }
 
 export async function create(b: ShiftInput) {
@@ -72,7 +72,7 @@ export async function create(b: ShiftInput) {
   breakParams(b);
   return transaction(async (tx) => {
     const r = await one(`INSERT INTO Shifts (Name, StartTime, EndTime, LateGraceMinutes, EarlyGraceMinutes, HalfDayMinutes, MinOvertimeMinutes, WeeklyOffs)
-      OUTPUT INSERTED.Id VALUES (@n, CONVERT(time, @s), CONVERT(time, @e), @lg, @eg, @hd, @ot, @wo)`, p, tx);
+      VALUES (@n, CAST(@s AS time), CAST(@e AS time), @lg, @eg, @hd, @ot, @wo) RETURNING Id`, p, tx);
     await saveBreak(r!.Id, b, tx);
     return r!.Id as number;
   });
@@ -82,7 +82,7 @@ export async function update(id: number, b: ShiftInput) {
   const p = params(b);
   breakParams(b);
   await transaction(async (tx) => {
-    await exec(`UPDATE Shifts SET Name = @n, StartTime = CONVERT(time, @s), EndTime = CONVERT(time, @e), LateGraceMinutes = @lg,
+    await exec(`UPDATE Shifts SET Name = @n, StartTime = CAST(@s AS time), EndTime = CAST(@e AS time), LateGraceMinutes = @lg,
       EarlyGraceMinutes = @eg, HalfDayMinutes = @hd, MinOvertimeMinutes = @ot, WeeklyOffs = @wo WHERE Id = @id`, { ...p, id }, tx);
     await saveBreak(id, b, tx);
   });
@@ -99,7 +99,7 @@ export async function schedule(departmentId: number | null) {
   const ids = departmentId ? await withChildren(departmentId) : null;
   const shifts = new Map((await loadShifts()).map((s) => [s.Id, s]));
   const rows = await query(`SELECT e.Id, e.EnrollNo, e.Name, d.Name Department, e.ShiftId, e.DepartmentId FROM Employees e
-    LEFT JOIN Departments d ON d.Id = e.DepartmentId WHERE e.IsActive = 1`);
+    LEFT JOIN Departments d ON d.Id = e.DepartmentId WHERE e.IsActive = TRUE`);
   return rows.filter((r) => !ids || (r.DepartmentId !== null && ids.includes(r.DepartmentId))).sort(byEnroll).map((r) => {
     const s = r.ShiftId ? shifts.get(r.ShiftId) : undefined;
     return { Id: r.Id, EnrollNo: r.EnrollNo, Name: r.Name, Department: r.Department, Shift: s ? shiftLabel(s) : '', WeeklyOff: s?.WeeklyOffs ?? '' };
@@ -108,6 +108,6 @@ export async function schedule(departmentId: number | null) {
 
 export async function assign(employeeIds: number[], shiftId: number | null) {
   if (!employeeIds.length) throw new UserError('Select employees first.');
-  await exec('UPDATE Employees SET ShiftId = @s WHERE Id IN (SELECT value FROM OPENJSON(@ids))', { s: shiftId, ids: employeeIds });
+  await exec('UPDATE Employees SET ShiftId = @s WHERE Id = ANY(@ids)', { s: shiftId, ids: employeeIds });
   return `Shift assigned to ${employeeIds.length} employee(s).`;
 }

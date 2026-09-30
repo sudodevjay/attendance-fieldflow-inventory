@@ -24,7 +24,7 @@ export async function list() {
 export async function create(name: string, parentId: number | null) {
   name = name.trim();
   if (!name) throw new UserError('Department name is required.');
-  const r = await one('INSERT INTO Departments (Name, ParentId) OUTPUT INSERTED.Id VALUES (@n, @p)', { n: name.slice(0, 100), p: parentId });
+  const r = await one('INSERT INTO Departments (Name, ParentId) VALUES (@n, @p) RETURNING Id', { n: name.slice(0, 100), p: parentId });
   return r!.Id as number;
 }
 
@@ -43,7 +43,7 @@ export async function move(id: number, parentId: number | null) {
 
 /** Employees of a deleted department are left without one. */
 export async function remove(id: number) {
-  if (await one('SELECT TOP 1 Id FROM Departments WHERE ParentId = @id', { id }))
+  if (await one('SELECT Id FROM Departments WHERE ParentId = @id LIMIT 1', { id }))
     throw new UserError('This department has sub-departments. Delete or move them first.');
   await exec('UPDATE Employees SET DepartmentId = NULL WHERE DepartmentId = @id; DELETE FROM Departments WHERE Id = @id', { id });
 }

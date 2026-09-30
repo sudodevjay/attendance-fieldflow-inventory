@@ -42,9 +42,9 @@ const toMin = (t: string) => {
 };
 
 export async function loadShifts(): Promise<Shift[]> {
-  const rows = await query(`SELECT s.Id, s.Name, CONVERT(varchar(5), s.StartTime, 108) s, CONVERT(varchar(5), s.EndTime, 108) e,
-    s.LateGraceMinutes, s.EarlyGraceMinutes, s.HalfDayMinutes, s.MinOvertimeMinutes, s.WeeklyOffs, ISNULL(x.BreakMinutes, 0) BreakMinutes,
-    CONVERT(varchar(5), x.BreakStart, 108) bs, CONVERT(varchar(5), x.BreakEnd, 108) be, ISNULL(x.DeductBreak, 0) DeductBreak
+  const rows = await query(`SELECT s.Id, s.Name, to_char(s.StartTime, 'HH24:MI') AS s, to_char(s.EndTime, 'HH24:MI') AS e,
+    s.LateGraceMinutes, s.EarlyGraceMinutes, s.HalfDayMinutes, s.MinOvertimeMinutes, s.WeeklyOffs, COALESCE(x.BreakMinutes, 0) BreakMinutes,
+    to_char(x.BreakStart, 'HH24:MI') AS bs, to_char(x.BreakEnd, 'HH24:MI') AS be, COALESCE(x.DeductBreak, FALSE) DeductBreak
     FROM Shifts s LEFT JOIN ShiftExtras x ON x.ShiftId = s.Id`);
   return rows.map(({ s, e, bs, be, ...r }) => ({
     ...r, start: toMin(s), end: toMin(e), breakStart: bs ? toMin(bs) : null, breakEnd: be ? toMin(be) : null, DeductBreak: !!r.DeductBreak,

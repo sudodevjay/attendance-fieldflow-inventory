@@ -16,7 +16,7 @@ const d = (t: DT | null) => (t === null ? '' : fmt(t, 'dd-MM-yyyy'));
 export async function list(y: number) {
   const rows = await query(`SELECT ${LEAVE_COLUMNS}, e.EnrollNo, e.Name, t.Code FROM LeaveEntries l
       LEFT JOIN Employees e ON e.Id = l.EmployeeId LEFT JOIN LeaveTypes t ON t.Id = l.LeaveTypeId
-    WHERE l.FromDate <= CONVERT(datetime2, @to, 120) AND l.ToDate >= CONVERT(datetime2, @from, 120)
+    WHERE l.FromDate <= CAST(@to AS timestamp) AND l.ToDate >= CAST(@from AS timestamp)
     ORDER BY CASE WHEN l.Status = 0 THEN 0 ELSE 1 END, l.FromDate DESC`, { from: `${y}-01-01`, to: `${y}-12-31` });
   return rows.map((r) => {
     const l = toLeave(r);
@@ -74,7 +74,7 @@ export async function save(b: LeaveInput): Promise<{ ok: true } | { needsConfirm
     const warning = await quotaWarning({ Id: id, EmployeeId: emp, LeaveTypeId: type, FromDate: from, ToDate: to, IsHalfDay: half });
     if (warning) return { needsConfirm: warning + '\n\nSave anyway?' };
   }
-  const old = id ? await one('SELECT Status, CONVERT(varchar(10), ApprovedOn, 120) ApprovedOn FROM LeaveEntries WHERE Id = @id', { id }) : null;
+  const old = id ? await one("SELECT Status, to_char(ApprovedOn, 'YYYY-MM-DD') AS ApprovedOn FROM LeaveEntries WHERE Id = @id", { id }) : null;
   if (!id && (await compoff.compOffTypeId()) === type) await compoff.checkLeave(emp, half ? 0.5 : (to - from) / 86_400_000 + 1);
   const decidedOn = status === 0 ? null : old && old.Status === status && old.ApprovedOn ? old.ApprovedOn : sqlD(today());
   const p = {
@@ -82,13 +82,13 @@ export async function save(b: LeaveInput): Promise<{ ok: true } | { needsConfirm
     ap: applied !== null ? sqlD(applied) : null, by: status === 0 ? null : by.slice(0, 100), on: decidedOn, id,
   };
   if (id)
-    await exec(`UPDATE LeaveEntries SET EmployeeId = @emp, LeaveTypeId = @type, FromDate = CONVERT(datetime2, @f, 120),
-      ToDate = CONVERT(datetime2, @t, 120), IsHalfDay = @h, Reason = @r, Status = @st, AppliedOn = CONVERT(datetime2, @ap, 120),
-      ApprovedBy = @by, ApprovedOn = CONVERT(datetime2, @on, 120) WHERE Id = @id`, p);
+    await exec(`UPDATE LeaveEntries SET EmployeeId = @emp, LeaveTypeId = @type, FromDate = CAST(@f AS timestamp),
+      ToDate = CAST(@t AS timestamp), IsHalfDay = @h, Reason = @r, Status = @st, AppliedOn = CAST(@ap AS timestamp),
+      ApprovedBy = @by, ApprovedOn = CAST(@on AS timestamp) WHERE Id = @id`, p);
   else
     await exec(`INSERT INTO LeaveEntries (EmployeeId, LeaveTypeId, FromDate, ToDate, IsHalfDay, Reason, Status, AppliedOn, ApprovedBy, ApprovedOn)
-      VALUES (@emp, @type, CONVERT(datetime2, @f, 120), CONVERT(datetime2, @t, 120), @h, @r, @st, CONVERT(datetime2, @ap, 120), @by,
-        CONVERT(datetime2, @on, 120))`, p);
+      VALUES (@emp, @type, CAST(@f AS timestamp), CAST(@t AS timestamp), @h, @r, @st, CAST(@ap AS timestamp), @by,
+        CAST(@on AS timestamp))`, p);
   if (status !== 0) await setSetting('Leave.LastApprover', by);
   if (status !== 0 && (!old || old.Status !== status)) await notifyDecision(emp, 'Leave', status === 1, by, null, 'leave');
   return { ok: true };
@@ -100,7 +100,7 @@ export async function decide(ids: number[], approve: boolean, by: string, confir
   by = by.trim();
   if (!by) throw new UserError(`Enter who ${approve ? 'approved' : 'rejected'} it.`);
   const ok = new Set(confirmed);
-  const rows = await query(`SELECT ${LEAVE_COLUMNS} FROM LeaveEntries l WHERE l.Id IN (SELECT value FROM OPENJSON(@ids))`, { ids });
+  const rows = await query(`SELECT ${LEAVE_COLUMNS} FROM LeaveEntries l WHERE l.Id = ANY(@ids)`, { ids });
   const warnings: { id: number; text: string }[] = [];
   let changed = 0;
   for (const r of rows) {
@@ -111,7 +111,7 @@ export async function decide(ids: number[], approve: boolean, by: string, confir
     }
     const st = approve ? 1 : 2;
     await exec(`UPDATE LeaveEntries SET Status = @st, ApprovedBy = @by,
-        ApprovedOn = CASE WHEN Status <> @st OR ApprovedOn IS NULL THEN CONVERT(datetime2, @on, 120) ELSE ApprovedOn END WHERE Id = @id`,
+        ApprovedOn = CASE WHEN Status <> @st OR ApprovedOn IS NULL THEN CAST(@on AS timestamp) ELSE ApprovedOn END WHERE Id = @id`,
     { st, by: by.slice(0, 100), on: sqlD(today()), id: l.Id });
     if (l.Status !== st) await notifyDecision(l.EmployeeId, 'Leave', approve, by, null, 'leave');
     changed++;
@@ -121,7 +121,7 @@ export async function decide(ids: number[], approve: boolean, by: string, confir
 }
 
 export async function removeMany(ids: number[]) {
-  await exec('DELETE FROM LeaveEntries WHERE Id IN (SELECT value FROM OPENJSON(@ids))', { ids });
+  await exec('DELETE FROM LeaveEntries WHERE Id = ANY(@ids)', { ids });
 }
 
 export const balance = (y: number) => leaveBalance('Leave Balance', y, null, null);

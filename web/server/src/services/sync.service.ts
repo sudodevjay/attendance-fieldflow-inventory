@@ -8,8 +8,8 @@ export interface DevicePunch { enrollNo: string; time: DT; verifyMode: number; i
 export interface SaveResult { added: number; duplicates: number; newEmployees: number }
 
 async function defaults() {
-  const s = await one<{ Id: number }>('SELECT TOP 1 Id FROM Shifts ORDER BY Id');
-  const d = await one<{ Id: number }>('SELECT TOP 1 Id FROM Departments ORDER BY Id');
+  const s = await one<{ Id: number }>('SELECT Id FROM Shifts ORDER BY Id LIMIT 1');
+  const d = await one<{ Id: number }>('SELECT Id FROM Departments ORDER BY Id LIMIT 1');
   return { shift: s?.Id ?? null, dept: d?.Id ?? null };
 }
 
@@ -29,8 +29,8 @@ export async function savePunches(punches: DevicePunch[], source: number): Promi
 
   const min = Math.min(...list.map((p) => p.time)), max = Math.max(...list.map((p) => p.time));
   const existing = new Set((await query<{ e: string; t: string }>(
-    `SELECT EnrollNo e, CONVERT(varchar(19), PunchTime, 120) t FROM AttendanceLogs
-     WHERE PunchTime >= CONVERT(datetime2, @a, 120) AND PunchTime <= CONVERT(datetime2, @b, 120)`,
+    `SELECT EnrollNo e, to_char(PunchTime, 'YYYY-MM-DD HH24:MI:SS') AS t FROM AttendanceLogs
+     WHERE PunchTime >= CAST(@a AS timestamp) AND PunchTime <= CAST(@b AS timestamp)`,
     { a: sqlDT(min), b: sqlDT(max) })).map((r) => `${r.e}|${parse(r.t)}`));
   const fresh = list.filter((p) => !existing.has(`${p.enrollNo}|${p.time}`));
 
@@ -42,12 +42,12 @@ export async function savePunches(punches: DevicePunch[], source: number): Promi
     for (let i = 0; i < fresh.length; i += 200) {
       const batch = fresh.slice(i, i + 200).map((p) => ({ e: p.enrollNo, t: sqlDT(p.time), v: p.verifyMode, io: p.inOutMode, w: p.workCode }));
       await exec(`INSERT INTO AttendanceLogs (EnrollNo, PunchTime, VerifyMode, InOutMode, WorkCode, Source)
-        SELECT j.e, CONVERT(datetime2, j.t, 120), j.v, j.io, j.w, @src
-        FROM OPENJSON(@rows) WITH (e nvarchar(24), t varchar(19), v int, io int, w int) j`, { rows: batch, src: source }, tx);
+        SELECT j.e, CAST(j.t AS timestamp), j.v, j.io, j.w, @src
+        FROM json_to_recordset(CAST(@rows AS json)) AS j(e text, t text, v int, io int, w int)`, { rows: JSON.stringify(batch), src: source }, tx);
     }
     for (const id of newIds)
       await exec(`INSERT INTO Employees (EnrollNo, Name, ShiftId, DepartmentId, Privilege, IsActive, MonthlySalary, OtRatePerHour)
-        VALUES (@e, @n, @s, @d, 0, 1, 0, 0)`, { e: id, n: `User ${id}`, s: d.shift, d: d.dept }, tx);
+        VALUES (@e, @n, @s, @d, 0, TRUE, 0, 0)`, { e: id, n: `User ${id}`, s: d.shift, d: d.dept }, tx);
   });
   return { added: fresh.length, duplicates: list.length - fresh.length, newEmployees: newIds.length };
 }
@@ -65,7 +65,7 @@ export async function saveUsers(users: DeviceUser[], overwriteNames: boolean) {
       const e = emps.get(u.enrollNo);
       if (!e) {
         await exec(`INSERT INTO Employees (EnrollNo, Name, ShiftId, DepartmentId, Privilege, IsActive, MonthlySalary, OtRatePerHour, DevicePassword, CardNo)
-          VALUES (@e, @n, @s, @d, @p, 1, 0, 0, @pw, @c)`, {
+          VALUES (@e, @n, @s, @d, @p, TRUE, 0, 0, @pw, @c)`, {
           e: u.enrollNo, n: u.name.trim() || `User ${u.enrollNo}`, s: d.shift, d: d.dept, p: u.privilege,
           pw: u.password || null, c: u.cardNo && u.cardNo !== '0' ? u.cardNo : null,
         }, tx);
@@ -77,7 +77,7 @@ export async function saveUsers(users: DeviceUser[], overwriteNames: boolean) {
       const name = u.name.trim() && (overwriteNames || placeholder) ? u.name.trim() : e.Name.trim() || `User ${u.enrollNo}`;
       await exec(`UPDATE Employees SET Name = @n, Privilege = @p,
           DevicePassword = CASE WHEN @pwset = 1 THEN @pw ELSE DevicePassword END,
-          CardNo = CASE WHEN @c IS NOT NULL THEN @c ELSE CardNo END WHERE Id = @id`, {
+          CardNo = CASE WHEN CAST(@c AS text) IS NOT NULL THEN @c ELSE CardNo END WHERE Id = @id`, {
         n: name, p: u.privilege, pwset: u.password !== undefined ? 1 : 0, pw: u.password || null,
         c: u.cardNo && u.cardNo !== '0' ? u.cardNo : null, id: e.Id,
       }, tx);

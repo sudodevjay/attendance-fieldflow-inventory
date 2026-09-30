@@ -1,4 +1,4 @@
-"""End-to-end test of the HR features on a COPY of the database (ZkAttendanceTest).
+"""End-to-end test of the HR features on a test PostgreSQL database (make_test_db.ps1).
 
     python web/test/e2e_hr.py
 
@@ -19,8 +19,7 @@ from datetime import date, timedelta
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 PORT = 4004
 BASE = f'http://localhost:{PORT}/api'
-CS = ('Driver={ODBC Driver 18 for SQL Server};Server=.\\SQLEXPRESS;Database=ZkAttendanceTest;'
-      'Trusted_Connection=yes;TrustServerCertificate=yes;')
+CS = os.environ.get('ZK_TEST_DATABASE_URL', 'postgresql://postgres:zkpass@localhost:5433/zkattendance_test')
 
 
 def call(method, path, body=None, token=None, raw=False):
@@ -67,7 +66,7 @@ def row_of(report, enroll, date_text=None):
 
 
 def main():
-    env = dict(os.environ, PORT=str(PORT), ZK_CONNECTION_STRING=CS)
+    env = dict(os.environ, PORT=str(PORT), DATABASE_URL=CS, TZ='Asia/Kolkata')
     server = subprocess.Popen('npx tsx src/server.ts', cwd=os.path.join(ROOT, 'web', 'server'), env=env, shell=True,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:

@@ -1,4 +1,4 @@
-/** Database Option: company (profile, logo), auto-sync, ADMS, SQL Server connection, backup, Raspberry Pi link. */
+/** Database Option: company (profile, logo), auto-sync, ADMS, PostgreSQL connection, backup, Raspberry Pi link. */
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../app';
@@ -21,7 +21,7 @@ export function Settings() {
   const set = (k: string, v: unknown) => setF((x: any) => ({ ...x, [k]: v }));
   const say = async (p: Promise<any>) => { const r = await app.run(() => p); if (r?.message) await app.alert(r.message); return r; };
   const base = pi?.bases?.[0] ?? `http://<this PC's IP>:${pi?.port ?? 4000}/api/lx50`;
-  const piConfig = `[cloud]\nurl = ${base}/punches\nusers_url = ${base}/users\ncommands_url = ${base}/commands\ntoken = ${pi?.token ?? ''}\nverify_tls = no`;
+  const piConfig = `[cloud]\nurl = ${base}/punches\nusers_url = ${base}/users\ncommands_url = ${base}/commands\ntoken = ${pi?.token ?? ''}\nverify_tls = ${base.startsWith('https://') ? 'yes' : 'no'}`;
 
   return (
     <Page title="Settings" icon="settings">
@@ -54,7 +54,7 @@ export function Settings() {
               }}>New token</Button>
             </div>
             {pi?.bases?.length > 1 && <Note>{`This PC has several addresses: ${pi.bases.join(' , ')}\nUse the one on the Pi's network.`}</Note>}
-            <Note>{`Windows Firewall must allow inbound TCP port ${pi?.port ?? 4000} for the Pi to reach this PC.`}</Note>
+            {!base.startsWith('https://') && <Note>{`Windows Firewall must allow inbound TCP port ${pi?.port ?? 4000} for the Pi to reach this PC.`}</Note>}
           </div>
         </Card>
 
@@ -68,15 +68,15 @@ export function Settings() {
           </div>
         </Card>
 
-        <Card title="Database (SQL Server)">
+        <Card title="Database (PostgreSQL)">
           <div className="space-y-3 p-4">
-            <Field label="Connection string (web server, ODBC)"><Input value={cs} onChange={(e) => setCs(e.target.value)} className="font-mono text-xs" /></Field>
+            <Field label="Connection string (web server)"><Input value={cs} onChange={(e) => setCs(e.target.value)} className="font-mono text-xs" /></Field>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => say(api.post('/settings/test-connection', { connectionString: cs }))}>Test Connection</Button>
               <Button onClick={() => say(api.put('/settings/connection', { connectionString: cs }))}>Save (restart required)</Button>
               <Button icon="backup" onClick={() => setBackup(true)}>Backup Database</Button>
             </div>
-            <Note>{'The web server and the Windows program use the same database. Example:\nDriver={ODBC Driver 18 for SQL Server};Server=.\\SQLEXPRESS;Database=ZkAttendance;Trusted_Connection=yes;TrustServerCertificate=yes;'}</Note>
+            <Note>{'The web version has its own PostgreSQL database (Supabase in the cloud); the Windows program keeps its SQL Server database. Example:\npostgresql://postgres.abcdefgh:PASSWORD@aws-0-ap-south-1.pooler.supabase.com:5432/postgres\nOn Render the connection string is the environment variable DATABASE_URL.'}</Note>
           </div>
         </Card>
       </div>

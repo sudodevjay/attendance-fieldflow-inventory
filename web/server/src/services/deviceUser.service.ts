@@ -9,11 +9,11 @@ import { saveUsers } from './sync.service';
 export async function piDevice(deviceId?: number | null) {
   const p = deviceId
     ? await one('SELECT Id, Name, SerialNumber, Kind FROM DeviceProfiles WHERE Id = @id', { id: deviceId })
-    : await one(`SELECT TOP 1 d.Id, d.Name, d.SerialNumber, d.Kind FROM DeviceProfiles d
+    : await one(`SELECT d.Id, d.Name, d.SerialNumber, d.Kind FROM DeviceProfiles d
         WHERE d.SerialNumber IS NOT NULL AND d.SerialNumber <> ''
           AND (EXISTS (SELECT 1 FROM PiDeviceUsers u WHERE u.DeviceSerial = d.SerialNumber)
                OR EXISTS (SELECT 1 FROM PiCommands c WHERE c.DeviceSerial = d.SerialNumber))
-        ORDER BY d.Id`);
+        ORDER BY d.Id LIMIT 1`);
   if (!p) throw new UserError('No device is linked to a Raspberry Pi yet. Set up the Pi (Database Option → Raspberry Pi) and wait until it shows Online in the Machine List.');
   if (!p.SerialNumber) throw new UserError(`Device '${p.Name}' has no serial number yet: it is not connected through a Raspberry Pi.`);
   return p as { Id: number; Name: string; SerialNumber: string; Kind: number };
@@ -23,7 +23,7 @@ export async function piDevice(deviceId?: number | null) {
 export async function upload(ids: number[], deviceId: number | null, by: string) {
   if (!ids.length) throw new UserError('Select an employee first.');
   const dev = await piDevice(deviceId);
-  const rows = await query(`SELECT EnrollNo, Name, DevicePassword, Privilege, CardNo FROM Employees WHERE Id IN (SELECT value FROM OPENJSON(@ids))`, { ids });
+  const rows = await query(`SELECT EnrollNo, Name, DevicePassword, Privilege, CardNo FROM Employees WHERE Id = ANY(@ids)`, { ids });
   const skipped: string[] = [];
   let queued = 0;
   for (const e of rows) {
@@ -43,7 +43,7 @@ export async function upload(ids: number[], deviceId: number | null, by: string)
 export async function removeFromDevice(ids: number[], deviceId: number | null, by: string) {
   if (!ids.length) throw new UserError('Select an employee first.');
   const dev = await piDevice(deviceId);
-  const rows = await query(`SELECT EnrollNo FROM Employees WHERE Id IN (SELECT value FROM OPENJSON(@ids))`, { ids });
+  const rows = await query(`SELECT EnrollNo FROM Employees WHERE Id = ANY(@ids)`, { ids });
   for (const e of rows) await queueCommand(dev.SerialNumber, 'delete_user', { user_id: e.EnrollNo }, by);
   log(dev.Id, `Delete ${rows.length} user(s) from device: queued for the Pi`);
   return `${rows.length} user(s) will be deleted from the device '${dev.Name}' (with their fingerprints) by the Raspberry Pi. The data stays in the software.`;
@@ -52,7 +52,7 @@ export async function removeFromDevice(ids: number[], deviceId: number | null, b
 /** Download user info: the user list the Pi last reported, merged into Employees. */
 export async function download(deviceId: number | null, overwriteNames: boolean) {
   const dev = await piDevice(deviceId);
-  const users = await query(`SELECT UserId, Name, Privilege, Card, CONVERT(varchar(19), UpdatedAt, 120) At FROM PiDeviceUsers WHERE DeviceSerial = @s`,
+  const users = await query(`SELECT UserId, Name, Privilege, Card, to_char(UpdatedAt, 'YYYY-MM-DD HH24:MI:SS') AS At FROM PiDeviceUsers WHERE DeviceSerial = @s`,
     { s: dev.SerialNumber });
   if (!users.length) throw new UserError(`The Raspberry Pi has not reported the user list of '${dev.Name}' yet.`);
   const r = await saveUsers(users.map((u) => ({

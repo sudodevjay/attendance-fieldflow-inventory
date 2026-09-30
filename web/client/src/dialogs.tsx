@@ -67,20 +67,17 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
 
 export function BackupDialog({ onClose }: { onClose: () => void }) {
   const { run, alert } = useApp();
-  const [path, setPath] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { api.get('/settings/backup/default').then((r) => setPath(r.path)).catch(() => {}); }, []);
   const go = async () => {
     setBusy(true);
-    const r = await run(() => api.post('/settings/backup', { path }));
+    const name = await run(() => api.download('/settings/backup'));
     setBusy(false);
-    if (r) { onClose(); await alert(r.message); }
+    if (name) { onClose(); await alert('Backup saved: ' + name); }
   };
   return (
     <Modal title="Backup Database" onClose={onClose}
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={busy} onClick={go}>Backup</Button></>}>
-      <Field label="Backup file (on the SQL Server computer)"><Input value={path} onChange={(e) => setPath(e.target.value)} /></Field>
-      <div className="mt-3"><Note>The backup file is written by the SQL Server service, so the folder must exist on the SQL Server computer and the service needs write permission to it.</Note></div>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={busy} onClick={go}>Download backup</Button></>}>
+      <Note>{'Downloads every table of the database as one JSON file to this computer (Downloads folder).\nKeep it somewhere safe: web/server/scripts/restore-backup.ts loads it into an empty database.'}</Note>
     </Modal>
   );
 }

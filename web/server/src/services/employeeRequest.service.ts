@@ -30,10 +30,10 @@ const HR_ONLY = ['PfNo', 'EsiNo'];
 export const SELF_FIELDS = [...Object.keys(EMPLOYEE_FIELDS), ...Object.keys(TEXT_FIELDS).filter((k) => !HR_ONLY.includes(k))];
 
 async function rows(where: string, params: Record<string, unknown>) {
-  const list = await query(`SELECT r.Id, r.EmployeeId, e.EnrollNo, e.Name, r.Type, CONVERT(varchar(10), r.RequestDate, 120) RequestDate,
-      CONVERT(varchar(19), r.PunchTime, 120) PunchTime, r.Category, CAST(r.Amount AS float) Amount, r.Installments, r.Details,
-      CASE WHEN r.Attachment IS NULL THEN 0 ELSE 1 END HasAttachment, r.Payload, r.Status, r.DecidedBy, CONVERT(varchar(10), r.DecidedOn, 120) DecidedOn,
-      r.DecisionNote, CONVERT(varchar(19), r.CreatedAt, 120) CreatedAt
+  const list = await query(`SELECT r.Id, r.EmployeeId, e.EnrollNo, e.Name, r.Type, to_char(r.RequestDate, 'YYYY-MM-DD') AS RequestDate,
+      to_char(r.PunchTime, 'YYYY-MM-DD HH24:MI:SS') AS PunchTime, r.Category, CAST(r.Amount AS float) Amount, r.Installments, r.Details,
+      CASE WHEN r.Attachment IS NULL THEN 0 ELSE 1 END AS HasAttachment, r.Payload, r.Status, r.DecidedBy, to_char(r.DecidedOn, 'YYYY-MM-DD') AS DecidedOn,
+      r.DecisionNote, to_char(r.CreatedAt, 'YYYY-MM-DD HH24:MI:SS') AS CreatedAt
     FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE ${where} ORDER BY r.CreatedAt DESC`, params);
   return list.map(({ Payload, ...r }) => ({
     ...r, Changes: Payload ? JSON.parse(Payload) as Record<string, string> : null, TypeName: TYPE_NAMES[r.Type] ?? r.Type,
@@ -51,13 +51,13 @@ export const ofEmployee = (employeeId: number, type = '') =>
 
 /** Requests of a team: pending ones, or all of the last 60 days. */
 export const ofEmployees = (ids: number[], mode: 'pending' | 'recent') => (ids.length
-  ? rows(`r.EmployeeId IN (SELECT value FROM OPENJSON(@ids)) AND ${mode === 'pending' ? 'r.Status = 0' : 'r.CreatedAt >= DATEADD(day, -60, SYSDATETIME())'}`, { ids })
+  ? rows(`r.EmployeeId = ANY(@ids) AND ${mode === 'pending' ? 'r.Status = 0' : "r.CreatedAt >= LOCALTIMESTAMP - INTERVAL '60 days'"}`, { ids })
   : Promise.resolve([] as RequestRow[]));
 
 /** Employee Portal → Employee Requests: filter by status (Pending / Approved / Rejected, '' = all) and type. */
 export function adminList(status: string, type: string) {
   const st = status === '' ? null : LEAVE_STATUS.indexOf(status as any);
-  return rows(`(@st IS NULL OR r.Status = @st) AND (@t = '' OR r.Type = @t)`, { st, t: type });
+  return rows(`(CAST(@st AS int) IS NULL OR r.Status = @st) AND (@t = '' OR r.Type = @t)`, { st, t: type });
 }
 
 export interface RequestInput {
@@ -77,13 +77,13 @@ export async function create(employeeId: number, b: RequestInput) {
     const hours = Number(b.Hours ?? b.Amount);
     if (!(hours >= 0.5 && hours <= 16)) throw new UserError('Overtime hours must be 0.5 to 16.');
     if (!details) throw new UserError('Please write what the overtime is for.');
-    if (await one("SELECT TOP 1 Id FROM EmployeeRequests WHERE EmployeeId = @id AND Type = 'Overtime' AND RequestDate = @d AND Status IN (0, 1)", { id: employeeId, d: sqlD(day) }))
+    if (await one("SELECT Id FROM EmployeeRequests WHERE EmployeeId = @id AND Type = 'Overtime' AND RequestDate = CAST(@d AS date) AND Status IN (0, 1) LIMIT 1", { id: employeeId, d: sqlD(day) }))
       throw new UserError('You already asked for overtime on this day.');
     p.date = sqlD(day); p.amt = Math.round(hours * 100) / 100;
   } else if (type === 'CompOff') {
     const day = mustParse(String(b.Date), 'date');
     const c = await compoff.claimable(employeeId, day);
-    if (await one("SELECT TOP 1 Id FROM EmployeeRequests WHERE EmployeeId = @id AND Type = 'CompOff' AND RequestDate = @d AND Status IN (0, 1)", { id: employeeId, d: sqlD(day) }))
+    if (await one("SELECT Id FROM EmployeeRequests WHERE EmployeeId = @id AND Type = 'CompOff' AND RequestDate = CAST(@d AS date) AND Status IN (0, 1) LIMIT 1", { id: employeeId, d: sqlD(day) }))
       throw new UserError('A comp-off for this day was already asked for.');
     p.date = sqlD(day); p.amt = Number(b.Amount) === 0.5 ? 0.5 : c.days; p.det = details || 'Worked on holiday / weekly off';
   } else if (type === 'Profile') {
@@ -120,7 +120,7 @@ export async function create(employeeId: number, b: RequestInput) {
     if (!details) throw new UserError('Please write what it is for.');
   }
   await exec(`INSERT INTO EmployeeRequests (EmployeeId, Type, RequestDate, PunchTime, Category, Amount, Installments, Details, Attachment, Payload)
-    VALUES (@id, @type, CONVERT(date, @date, 120), CONVERT(datetime2, @pt, 120), @cat, CAST(@amt AS decimal(18,2)), @inst, @det, @att, @pl)`, p);
+    VALUES (@id, @type, CAST(@date AS date), CAST(@pt AS timestamp), @cat, CAST(@amt AS decimal(18,2)), @inst, @det, @att, @pl)`, p);
   await notifyNewRequest(employeeId, TYPE_NAMES[type], type === 'Profile' ? [] : undefined);
   return `${TYPE_NAMES[type]} sent. Status: Pending.`;
 }
@@ -179,17 +179,17 @@ export async function pendingOwner(id: number): Promise<number | null> {
 
 /** Sets the decision; an approved regularisation adds its punch (unless the employee already has one at that time). */
 export async function decide(id: number, approve: boolean, by: string, note: string | null) {
-  const r = await one(`SELECT r.Id, r.EmployeeId, r.Type, CONVERT(varchar(19), r.PunchTime, 120) PunchTime, r.Category, r.Details, r.Payload,
+  const r = await one(`SELECT r.Id, r.EmployeeId, r.Type, to_char(r.PunchTime, 'YYYY-MM-DD HH24:MI:SS') AS PunchTime, r.Category, r.Details, r.Payload,
       e.EnrollNo FROM EmployeeRequests r JOIN Employees e ON e.Id = r.EmployeeId WHERE r.Id = @id AND r.Status = 0`, { id });
   if (!r) return false;
   if (approve && r.Type === 'Profile' && r.Payload) await applyProfile(r.EmployeeId, JSON.parse(r.Payload));
-  await exec(`UPDATE EmployeeRequests SET Status = @st, DecidedBy = @by, DecidedOn = SYSDATETIME(), DecisionNote = @note WHERE Id = @id`,
+  await exec(`UPDATE EmployeeRequests SET Status = @st, DecidedBy = @by, DecidedOn = LOCALTIMESTAMP, DecisionNote = @note WHERE Id = @id`,
     { st: approve ? 1 : 2, by: by.slice(0, 100), note, id });
   if (approve && r.Type === 'Regularisation' && r.PunchTime) {
-    const exists = await one('SELECT TOP 1 Id FROM AttendanceLogs WHERE EnrollNo = @e AND PunchTime = CONVERT(datetime2, @t, 120)', { e: r.EnrollNo, t: r.PunchTime });
+    const exists = await one('SELECT Id FROM AttendanceLogs WHERE EnrollNo = @e AND PunchTime = CAST(@t AS timestamp) LIMIT 1', { e: r.EnrollNo, t: r.PunchTime });
     if (!exists)
       await exec(`INSERT INTO AttendanceLogs (EnrollNo, PunchTime, VerifyMode, InOutMode, WorkCode, Source, Remark)
-        VALUES (@e, CONVERT(datetime2, @t, 120), -1, @io, 0, @src, @rem)`, {
+        VALUES (@e, CAST(@t AS timestamp), -1, @io, 0, @src, @rem)`, {
         e: r.EnrollNo, t: r.PunchTime, io: r.Category === 'Check-Out' ? 1 : 0, src: PunchSource.Manual,
         rem: `Regularisation #${r.Id}: ${String(r.Details ?? '').slice(0, 150)}`,
       });
@@ -210,7 +210,7 @@ export async function decideMany(ids: number[], approve: boolean, by: string, no
 
 /** Approved expense claims of an employee in [from, to) (dates yyyy-MM-dd). */
 export async function reimbursedBetween(employeeId: number, from: string, to: string): Promise<number> {
-  const r = await one(`SELECT CAST(ISNULL(SUM(Amount), 0) AS float) s FROM EmployeeRequests WHERE EmployeeId = @id AND Type = 'Expense'
+  const r = await one(`SELECT CAST(COALESCE(SUM(Amount), 0) AS float) s FROM EmployeeRequests WHERE EmployeeId = @id AND Type = 'Expense'
     AND Status = 1 AND RequestDate >= @f AND RequestDate < @t`, { id: employeeId, f: from, t: to });
   return r?.s ?? 0;
 }

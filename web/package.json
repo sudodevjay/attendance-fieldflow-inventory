@@ -1,7 +1,7 @@
 {
   "name": "zk-attendance-web",
   "private": true,
-  "description": "Web version of the ZK Attendance Manager: React + Tailwind client, Node.js + TypeScript server, same SQL Server database",
+  "description": "Web version of the ZK Attendance Manager: React + Tailwind client, Node.js + TypeScript server, own PostgreSQL database (Supabase)",
   "scripts": {
     "install:all": "npm --prefix server install && npm --prefix client install",
     "build": "npm --prefix client run build",

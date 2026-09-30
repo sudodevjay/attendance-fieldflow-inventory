@@ -41,9 +41,9 @@ export async function write(user: string, role: string | null, method: string, p
 /** Log entries of [from, to] (yyyy-MM-dd), optionally filtered by user / text; newest first, max 5000. */
 export async function list(from: string, to: string, user: string, text: string) {
   const f = mustParse(from), t = addDays(mustParse(to), 1);
-  const rows = await query(`SELECT TOP 5000 Id, CONVERT(varchar(19), At, 120) At, UserName, Role, Action, Path, Details, Ip FROM AuditLog
-    WHERE At >= @f AND At < @t AND (@u = '' OR UserName LIKE '%' + @u + '%')
-      AND (@q = '' OR Action LIKE '%' + @q + '%' OR Path LIKE '%' + @q + '%' OR Details LIKE '%' + @q + '%')
-    ORDER BY At DESC, Id DESC`, { f: sqlD(f), t: sqlD(t), u: user.trim(), q: text.trim() });
+  const rows = await query(`SELECT Id, to_char(At, 'YYYY-MM-DD HH24:MI:SS') AS At, UserName, Role, Action, Path, Details, Ip FROM AuditLog
+    WHERE At >= @f AND At < @t AND (@u = '' OR UserName ILIKE '%' || @u || '%')
+      AND (@q = '' OR Action ILIKE '%' || @q || '%' OR Path ILIKE '%' || @q || '%' OR Details ILIKE '%' || @q || '%')
+    ORDER BY At DESC, Id DESC LIMIT 5000`, { f: sqlD(f), t: sqlD(t), u: user.trim(), q: text.trim() });
   return rows.map((r) => ({ ...r, When: fmt(parse(r.At)!, 'dd-MM-yyyy HH:mm:ss'), Role: r.Role ?? '', Details: r.Details ?? '' }));
 }

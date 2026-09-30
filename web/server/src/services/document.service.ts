@@ -12,7 +12,7 @@ const TYPES: Record<string, string> = {
 const typeOf = (name: string) => TYPES[/\.([^.]+)$/.exec(name)?.[1].toLowerCase() ?? ''];
 
 export async function list(employeeId: number) {
-  const rows = await query(`SELECT Id, Title, FileName, ContentType, SizeBytes, UploadedBy, CONVERT(varchar(16), UploadedAt, 120) UploadedAt
+  const rows = await query(`SELECT Id, Title, FileName, ContentType, SizeBytes, UploadedBy, to_char(UploadedAt, 'YYYY-MM-DD HH24:MI') AS UploadedAt
     FROM EmployeeDocuments WHERE EmployeeId = @id ORDER BY UploadedAt DESC`, { id: employeeId });
   return rows;
 }
@@ -25,7 +25,7 @@ export async function add(employeeId: number, title: string, file: { originalnam
   if (!typeOf(name)) throw new UserError('Allowed files: PDF, JPG, PNG, GIF, WEBP, Word, Excel, TXT.');
   const t = title.trim().slice(0, 100) || name.replace(/\.[^.]+$/, '');
   const r = await one(`INSERT INTO EmployeeDocuments (EmployeeId, Title, FileName, ContentType, SizeBytes, Data, UploadedBy)
-    OUTPUT INSERTED.Id VALUES (@e, @t, @f, @c, @s, @d, @by)`,
+    VALUES (@e, @t, @f, @c, @s, @d, @by) RETURNING Id`,
   { e: employeeId, t, f: name, c: typeOf(name), s: file.buffer.length,
     d: file.buffer.toString('base64'), by: by.slice(0, 100) });
   return r!.Id as number;

@@ -23,7 +23,7 @@ async function teamLeaves(ids: number[], pendingOnly: boolean) {
   if (!ids.length) return [];
   const types = new Map((await loadLeaveTypes()).map((x) => [x.Id, x]));
   const rows = await query(`SELECT ${LEAVE_COLUMNS}, e.Name, e.EnrollNo FROM LeaveEntries l JOIN Employees e ON e.Id = l.EmployeeId
-    WHERE l.EmployeeId IN (SELECT value FROM OPENJSON(@ids)) AND ${pendingOnly ? 'l.Status = 0' : 'l.ToDate >= CONVERT(datetime2, @f, 120)'}
+    WHERE l.EmployeeId = ANY(@ids) AND ${pendingOnly ? 'l.Status = 0' : 'l.ToDate >= CAST(@f AS timestamp)'}
     ORDER BY ${pendingOnly ? 'l.FromDate' : 'l.Status, l.FromDate DESC'}`, { ids, f: sqlD(addDays(today(), -60)) });
   return rows.map((r) => leaveRow(toLeave(r, types), { Name: r.Name, EnrollNo: r.EnrollNo, EmployeeId: r.EmployeeId }));
 }
@@ -67,14 +67,14 @@ export async function decide(managerId: number, kind: string, id: number, approv
   const m = await requireManager(managerId);
   const ids = await teamIds(m.Id);
   if (kind === 'leave') {
-    const l = await one(`SELECT l.EmployeeId, l.Status, t.Code, CONVERT(varchar(10), l.FromDate, 120) f FROM LeaveEntries l
+    const l = await one(`SELECT l.EmployeeId, l.Status, t.Code, to_char(l.FromDate, 'YYYY-MM-DD') AS f FROM LeaveEntries l
       LEFT JOIN LeaveTypes t ON t.Id = l.LeaveTypeId WHERE l.Id = @id`, { id });
     if (!l || !ids.includes(l.EmployeeId)) throw new UserError('This leave is not from your team.', 403);
     if (l.Status !== 0) throw new UserError('This leave has already been decided.');
     if (approve && l.Code === compoff.COMP_OFF_CODE && (await compoff.balance(l.EmployeeId)).uncovered > 0)
       throw new UserError('Not enough comp-off balance for this leave.');
-    await exec(`UPDATE LeaveEntries SET Status = @st, ApprovedBy = @by, ApprovedOn = CONVERT(datetime2, @on, 120),
-      Reason = CASE WHEN @note IS NULL THEN Reason ELSE LEFT(ISNULL(Reason, '') + ' | ' + @note, 200) END WHERE Id = @id`,
+    await exec(`UPDATE LeaveEntries SET Status = @st, ApprovedBy = @by, ApprovedOn = CAST(@on AS timestamp),
+      Reason = CASE WHEN CAST(@note AS text) IS NULL THEN Reason ELSE LEFT(COALESCE(Reason, '') || ' | ' || @note, 200) END WHERE Id = @id`,
     { st: approve ? 1 : 2, by: m.Name.slice(0, 100), on: sqlD(today()), note, id });
     await notifyDecision(l.EmployeeId, `${l.Code ?? ''} leave`.trim(), approve, m.Name, note, 'leave');
   } else {

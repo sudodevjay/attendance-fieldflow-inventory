@@ -130,8 +130,8 @@ async function approvedOvertime(employeeIds: number[], days: DayRecord[]) {
   const out = new Map<string, number>();
   if (!employeeIds.length || !days.length) return out;
   const from = days.reduce((m, d) => Math.min(m, d.Date), Infinity), to = days.reduce((m, d) => Math.max(m, d.Date), -Infinity);
-  const rows = await query(`SELECT EmployeeId, CONVERT(varchar(10), RequestDate, 120) d, CAST(Amount AS float) h FROM EmployeeRequests
-    WHERE Type = 'Overtime' AND Status = 1 AND RequestDate >= @f AND RequestDate <= @t AND EmployeeId IN (SELECT value FROM OPENJSON(@ids))`,
+  const rows = await query(`SELECT EmployeeId, to_char(RequestDate, 'YYYY-MM-DD') AS d, CAST(Amount AS float) h FROM EmployeeRequests
+    WHERE Type = 'Overtime' AND Status = 1 AND RequestDate >= @f AND RequestDate <= @t AND EmployeeId = ANY(@ids)`,
   { f: sqlD(from), t: sqlD(to), ids: employeeIds });
   for (const r of rows) {
     const k = `${r.EmployeeId}|${parse(r.d)}`;
@@ -219,8 +219,8 @@ export async function leaveBalance(title: string, y: number, departmentId: numbe
   const shifts = new Map((await loadShifts()).map((s) => [s.Id, s]));
   const start = make(y, 1, 1), end = make(y, 12, 31);
   const all = emps.length
-    ? (await query(`SELECT ${LEAVE_COLUMNS} FROM LeaveEntries l WHERE l.EmployeeId IN (SELECT value FROM OPENJSON(@ids))
-        AND l.FromDate <= CONVERT(datetime2, @e, 120) AND l.ToDate >= CONVERT(datetime2, @s, 120)`,
+    ? (await query(`SELECT ${LEAVE_COLUMNS} FROM LeaveEntries l WHERE l.EmployeeId = ANY(@ids)
+        AND l.FromDate <= CAST(@e AS timestamp) AND l.ToDate >= CAST(@s AS timestamp)`,
       { ids: emps.map((e) => e.Id), s: sqlDT(start), e: sqlDT(end) })).map((r) => toLeave(r, typeMap))
     : [];
   const holidays = new Set((await loadHolidays(start, end)).keys());
@@ -261,7 +261,7 @@ export async function leaveQuota(employeeId: number, leaveTypeId: number, y: num
   const start = make(y, 1, 1), end = make(y, 12, 31);
   const holidays = new Set((await loadHolidays(start, end)).keys());
   const rows = await query(`SELECT ${LEAVE_COLUMNS} FROM LeaveEntries l WHERE l.EmployeeId = @emp AND l.LeaveTypeId = @lt
-    AND l.FromDate <= CONVERT(datetime2, @e, 120) AND l.ToDate >= CONVERT(datetime2, @s, 120) AND l.Status = 1 AND l.Id <> @ex`,
+    AND l.FromDate <= CAST(@e AS timestamp) AND l.ToDate >= CAST(@s AS timestamp) AND l.Status = 1 AND l.Id <> @ex`,
     { emp: employeeId, lt: leaveTypeId, s: sqlDT(start), e: sqlDT(end), ex: excludeLeaveId ?? 0 });
   const taken = rows.map((r) => toLeave(r)).flatMap((l) => leaveDays(l, shift, holidays))
     .filter((x) => year(x.date) === y).reduce((a, x) => a + x.days, 0);

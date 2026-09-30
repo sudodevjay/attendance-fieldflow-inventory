@@ -3,8 +3,7 @@
  * deductions, with per-employee amounts that replace a component's rule; and the statutory deductions (PF, ESI,
  * Professional Tax) plus advance recovery. Company rules are in AppSettings (Salary.*).
  */
-import type * as MSSQL from 'mssql';
-import { exec, one, query } from '../config/db';
+import { exec, one, query, type Tx } from '../config/db';
 import { UserError } from '../utils/errors';
 import { round2 } from '../utils/format';
 import { getSettings, setSetting } from './settings.service';
@@ -14,7 +13,7 @@ export interface Component { Id: number; Name: string; Kind: 'Earning' | 'Deduct
 
 export async function loadComponents(activeOnly = true): Promise<Component[]> {
   const rows = await query(`SELECT Id, Name, Kind, Calc, CAST(Value AS float) Value, IsBasic, SortOrder, IsActive FROM SalaryComponents
-    ${activeOnly ? 'WHERE IsActive = 1' : ''} ORDER BY SortOrder, Id`);
+    ${activeOnly ? 'WHERE IsActive = TRUE' : ''} ORDER BY SortOrder, Id`);
   return rows.map((r) => ({ ...r, IsBasic: !!r.IsBasic, IsActive: !!r.IsActive }));
 }
 
@@ -37,7 +36,7 @@ export async function saveComponent(b: ComponentInput) {
   if (calc === 'Balance' && all.some((c) => c.Calc === 'Balance' && c.Id !== id && c.IsActive))
     throw new UserError('Only one earning can take the balance.');
   const p = { id, n: name.slice(0, 60), k: kind, c: calc, v: value, b: isBasic, s: Number(b.SortOrder ?? 5) || 0, a: b.IsActive !== false };
-  if (isBasic) await exec('UPDATE SalaryComponents SET IsBasic = 0 WHERE Id <> ISNULL(@id, 0)', p);
+  if (isBasic) await exec('UPDATE SalaryComponents SET IsBasic = FALSE WHERE Id <> COALESCE(@id, 0)', p);
   if (id) await exec(`UPDATE SalaryComponents SET Name = @n, Kind = @k, Calc = @c, Value = CAST(@v AS decimal(18,2)), IsBasic = @b,
     SortOrder = @s, IsActive = @a WHERE Id = @id`, p);
   else await exec(`INSERT INTO SalaryComponents (Name, Kind, Calc, Value, IsBasic, SortOrder, IsActive)
@@ -53,7 +52,7 @@ export async function loadOverrides(employeeIds: number[]): Promise<Map<number, 
   const out = new Map<number, Map<number, number>>();
   if (!employeeIds.length) return out;
   const rows = await query(`SELECT EmployeeId, ComponentId, CAST(Amount AS float) Amount FROM EmployeeSalaryComponents
-    WHERE EmployeeId IN (SELECT value FROM OPENJSON(@ids))`, { ids: employeeIds });
+    WHERE EmployeeId = ANY(@ids)`, { ids: employeeIds });
   for (const r of rows) {
     const m = out.get(r.EmployeeId) ?? new Map<number, number>();
     m.set(r.ComponentId, r.Amount);
@@ -63,7 +62,7 @@ export async function loadOverrides(employeeIds: number[]): Promise<Map<number, 
 }
 
 /** Replaces an employee's own amounts: [{ ComponentId, Amount }], Amount '' / null = use the component's rule. */
-export async function saveOverrides(employeeId: number, list: unknown, tx?: MSSQL.Transaction) {
+export async function saveOverrides(employeeId: number, list: unknown, tx?: Tx) {
   if (!Array.isArray(list)) return;
   await exec('DELETE FROM EmployeeSalaryComponents WHERE EmployeeId = @e', { e: employeeId }, tx);
   for (const x of list) {
@@ -153,9 +152,9 @@ export async function saveStatutory(b: Record<string, unknown>) {
 export async function advanceInstallments(employeeIds: number[], year: number, month: number): Promise<Map<number, number>> {
   const out = new Map<number, number>();
   if (!employeeIds.length) return out;
-  const rows = await query(`SELECT EmployeeId, CAST(Amount AS float) Amount, ISNULL(Installments, 1) Installments,
-      YEAR(DecidedOn) y, MONTH(DecidedOn) m FROM EmployeeRequests
-    WHERE Type = 'Advance' AND Status = 1 AND DecidedOn IS NOT NULL AND EmployeeId IN (SELECT value FROM OPENJSON(@ids))`, { ids: employeeIds });
+  const rows = await query(`SELECT EmployeeId, CAST(Amount AS float) Amount, COALESCE(Installments, 1) Installments,
+      CAST(EXTRACT(YEAR FROM DecidedOn) AS int) y, CAST(EXTRACT(MONTH FROM DecidedOn) AS int) m FROM EmployeeRequests
+    WHERE Type = 'Advance' AND Status = 1 AND DecidedOn IS NOT NULL AND EmployeeId = ANY(@ids)`, { ids: employeeIds });
   for (const r of rows) {
     const k = year * 12 + month - (r.y * 12 + r.m); // 1 = first month after approval
     if (k < 1 || k > r.Installments) continue;
