@@ -2,6 +2,71 @@
 
 .NET 8 WinForms + SQL Server attendance software for the ZKTeco LX50 fingerprint device.
 
+## Live deployment (cloud) — sab details yahan
+
+Web version internet par free chalta hai. **Passwords / tokens / keys is file mein NAHI hain** (repo public hai): wo
+sirf PC par `D:\attendance\CREDENTIALS.local.md` mein hain (`.gitignore` me, kabhi push nahi hoti). Us file ki ek copy
+Google Drive / pendrive par bhi rakhein.
+
+```
+ Office Wi-Fi                              Internet
+ LX50 ─ USB hub ─ Raspberry Pi ──https──► Render (React app + API) ──► Supabase PostgreSQL
+                      ▲                         ▲
+   Tailscale (SSH kahin se bhi)       Browser / mobile app (kahin se bhi)
+```
+
+| Kya | Detail |
+|---|---|
+| **App (admin)** | https://zk-attendance.onrender.com — login: koi bhi user name + admin password |
+| **Employee portal** | https://zk-attendance.onrender.com/me (AC No + password) |
+| **Mobile app** | Server address: `https://zk-attendance.onrender.com` (`https://` zaroor likhein) |
+| **Code** | GitHub `sudodevjay/attendancecontroller`, branch **`render-postgres`** (push = Render apne aap deploy karta hai) |
+| **Render** (hosting, free) | https://dashboard.render.com → service **zk-attendance** (`srv-dau99mek1f9s73at5u9g`), region Singapore, root `web/`, build `npm run install:all && npm run build`, start `npm start`, health check `/api/auth/status` |
+| Render env vars | `DATABASE_URL` (Supabase URI), `ADMIN_PASSWORD` (pehla admin password, sirf jab koi password set na ho), `TZ=Asia/Kolkata`, `NODE_VERSION=22` |
+| **Supabase** (database, free) | https://supabase.com/dashboard/project/jvwliosayqsnfbgvefnu — PostgreSQL 17, region Southeast Asia (Singapore) |
+| Database connection | **Session pooler**: host `aws-0-ap-southeast-1.pooler.supabase.com`, port `5432`, database `postgres`, user `postgres.jvwliosayqsnfbgvefnu` → `postgresql://postgres.jvwliosayqsnfbgvefnu:<PASSWORD>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres` ("Direct connection" Render par nahi chalta: IPv6) |
+| **Raspberry Pi** | Raspberry Pi 4, Debian 13, user `housys`, hostname `housys` (`housys.local` same Wi-Fi par) |
+| Pi remote access | **Tailscale**: naam `housys-pi`, IP `100.107.8.31` → `ssh housys@housys-pi` (laptop / phone par Tailscale on, same account) |
+| Pi service | `lx50pi` (systemd, boot par chalu). Config `/etc/lx50pi/config.ini` (purani copy `config.ini.bak-*`), local punches `/var/lib/lx50pi/lx50.db` |
+| Pi → cloud | `[cloud]` me `url / users_url / commands_url = https://zk-attendance.onrender.com/api/lx50/{punches,users,commands}`, `token = <Pi token>`, `verify_tls = yes` |
+| LX50 | Pi → **USB 2.0 hub** → LX50 (LX50 apne DC power par; hub ke bina USB se gir jata hai). Serial `NPT6262703374` |
+| Windows program | apna SQL Server database (`.\SQLEXPRESS`, `ZkAttendance`) — cloud use nahi karta, na badalta hai. Data ek baar copy kiya gaya (2026-09-30) |
+
+### Roz ke / kabhi-kabhi ke kaam
+
+| Kaam | Kaise |
+|---|---|
+| Pi me login (kahin se bhi) | `ssh housys@housys-pi` (na chale to `ssh housys@100.107.8.31`) |
+| Pi ke logs | `journalctl -u lx50pi -f` (live) / `journalctl -u lx50pi -n 50` |
+| Pi service restart | `sudo systemctl restart lx50pi` |
+| Pi device check | `sudo systemctl stop lx50pi` → `sudo -u lx50pi /opt/lx50pi/venv/bin/python -m lx50pi -c /etc/lx50pi/config.ini info` → `sudo systemctl start lx50pi` (program `/opt/lx50pi`) |
+| Naya Wi-Fi (office) jodna | `sudo nmcli dev wifi connect "<naam>" password "<password>"` — save ho jata hai, apne aap judta hai. Saved list: `nmcli con show` |
+| Pi ka internet check | `curl -I https://zk-attendance.onrender.com` |
+| Code change deploy | `git push` (branch `render-postgres`) → Render ~3–5 min me deploy. Status / logs: Render dashboard → zk-attendance → Events / Logs |
+| Manual redeploy | Render dashboard → zk-attendance → **Manual Deploy → Deploy latest commit** |
+| Env var badalna | Render → zk-attendance → **Environment** → edit → Save (service restart hoti hai) |
+| Admin password badalna | App me **Maintenance/Options → Administrator** (`ADMIN_PASSWORD` sirf pehli baar kaam aata hai) |
+| Database password badalna | Supabase → Project Settings → Database → **Reset database password** → phir Render me `DATABASE_URL` update karein |
+| Pi token badalna | App → **Database Option → Raspberry Pi → New token** → Pi ki `config.ini` me `token =` badlein → `sudo systemctl restart lx50pi` |
+| Backup (hafte me ek baar) | App → **Database Option → Backup Database** → JSON file download (Supabase free me backup download nahi hota) |
+| Backup wapas daalna | `cd web/server`, `set DATABASE_URL=<URI>`, `npx tsx scripts/restore-backup.ts <file.json> --yes` |
+| SQL Server data dobara copy | `cd web/server`, `set DATABASE_URL=<URI>`, `npx tsx scripts/copy-from-sqlserver.ts --yes` (cloud ka data **replace** hota hai; SQL Server sirf padha jata hai) |
+| Tailscale key expiry band | https://login.tailscale.com/admin/machines → housys-pi → ⋯ → **Disable key expiry** (warna ~6 mahine baad Pi hat jata hai) |
+| Pi Tailscale se hat gaya | Pi par (same Wi-Fi / screen se): `sudo tailscale up --hostname=housys-pi --ssh` → link kholein; ya admin → Settings → Keys → auth key → `sudo tailscale up --auth-key=<key> --hostname=housys-pi --ssh` |
+
+### Jab kuch na chale
+
+| Problem | Dekhein |
+|---|---|
+| App pehli baar bahut dheere khulti hai | Render free 15 min bina request ke so jata hai; Pi har 15 s call karta hai to jaagta rehta hai. Pi band = pehli request ~1 min |
+| Machine List me Pi **Offline** | Pi on hai? Wi-Fi? `ssh housys@housys-pi` → `journalctl -u lx50pi -n 30` ("cannot reach server" = internet; "USB device not found" = LX50 / hub / power) |
+| "wrong token" Pi ke log me | App → Database Option → Raspberry Pi ka token aur Pi ki `config.ini` ka token same karein |
+| App "Could not start" / 500 errors | Render → Logs. Supabase project **paused**? (7 din bina activity) → Supabase dashboard → **Restore project** |
+| Database bhar gaya | Supabase free = 500 MB (photos / documents sabse zyada jagah lete hain). Dashboard → Database → usage |
+| Login bhool gaye | Supabase → SQL Editor: `DELETE FROM appsettings WHERE key = 'AdminPasswordHash';` → Render me `ADMIN_PASSWORD` set karke Manual Deploy (ab naya password lagega) |
+
+Poori deploy guide (shuru se): [web/DEPLOY.md](web/DEPLOY.md). Pi ka protocol / setup: [pi/README.md](pi/README.md).
+
 ## Screens (classic ZKTime 5.0 / "Attendance Management Program" layout)
 
 **Main window**: menu (Data, Attendance, Search/Print, Maintenance/Options, Device management, Help), toolbar
