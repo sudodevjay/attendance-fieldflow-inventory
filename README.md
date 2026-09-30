@@ -21,7 +21,7 @@ Google Drive / pendrive par bhi rakhein.
 | **Employee portal** | https://zk-attendance.onrender.com/me (AC No + password) |
 | **Pi Wi-Fi badalna** | https://zk-attendance.onrender.com/wifisetup — alag password (Render env `WIFI_SETUP_PASSWORD`). Pi ke aas-paas ke Wi-Fi dikhte hain, ek chuno + password → Pi us par shift ho jata hai. Saved sirf 2: naya (priority 999) + fallback `satyendra` (900); purana delete. Galat password = Pi purane Wi-Fi par wapas |
 | **Mobile app** | Server address: `https://zk-attendance.onrender.com` (`https://` zaroor likhein) |
-| **Code** | GitHub `sudodevjay/attendancecontroller`, branch **`render-postgres`** (push = Render apne aap deploy karta hai) |
+| **Code** | GitHub `sudodevjay/attendancecontroller`, branch **`render-postgres`** (service public repo URL se bani hai: push ke baad **Manual Deploy** karna hota hai, neeche dekhein) |
 | **Render** (hosting, free) | https://dashboard.render.com → service **zk-attendance** (`srv-dau99mek1f9s73at5u9g`), region Singapore, root `web/`, build `npm run install:all && npm run build`, start `npm start`, health check `/api/auth/status` |
 | Render env vars | `DATABASE_URL` (Supabase URI), `ADMIN_PASSWORD` (pehla admin password, sirf jab koi password set na ho), `TZ=Asia/Kolkata`, `NODE_VERSION=22` |
 | **Supabase** (database, free) | https://supabase.com/dashboard/project/jvwliosayqsnfbgvefnu — PostgreSQL 17, region Southeast Asia (Singapore) |
@@ -44,7 +44,7 @@ Google Drive / pendrive par bhi rakhein.
 | Pi device check | `sudo systemctl stop lx50pi` → `sudo -u lx50pi /opt/lx50pi/venv/bin/python -m lx50pi -c /etc/lx50pi/config.ini info` → `sudo systemctl start lx50pi` (program `/opt/lx50pi`) |
 | Naya Wi-Fi (office) jodna | **Aasaan:** phone se https://zk-attendance.onrender.com/wifisetup (Pi ko internet chahiye: jahan naya Wi-Fi nahi hai wahan phone ka hotspot `satyendra` on karo, Pi usse judega, phir page se naya Wi-Fi chuno). Ya SSH se: `sudo nmcli dev wifi connect "<naam>" password "<password>"`. Saved list: `nmcli con show` |
 | Pi ka internet check | `curl -I https://zk-attendance.onrender.com` |
-| Code change deploy | `git push` (branch `render-postgres`) → Render ~3–5 min me deploy. Status / logs: Render dashboard → zk-attendance → Events / Logs |
+| Code change deploy | `git push` (branch `render-postgres`) → Render dashboard → zk-attendance → **Manual Deploy → Deploy latest commit** (~2–5 min). Status / logs: Events / Logs. Auto-deploy chahiye to: Settings → Build & Deploy → repository ko GitHub account se connect karein |
 | Manual redeploy | Render dashboard → zk-attendance → **Manual Deploy → Deploy latest commit** |
 | Env var badalna | Render → zk-attendance → **Environment** → edit → Save (service restart hoti hai) |
 | Admin password badalna | App me **Maintenance/Options → Administrator** (`ADMIN_PASSWORD` sirf pehli baar kaam aata hai) |

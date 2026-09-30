@@ -36,7 +36,8 @@ npx tsx scripts/copy-from-sqlserver.ts
 4. **Apply**. The first build takes ~5 minutes. Then open `https://zk-attendance.onrender.com` (the name Render shows),
    log in with any user name and `ADMIN_PASSWORD`.
 
-Every push to the branch deploys again. Logs: Render dashboard → the service → Logs.
+With the Blueprint (GitHub connected) every push deploys again. A service created from the public repo URL (as the
+live one) does not get the pushes: Render → the service → **Manual Deploy → Deploy latest commit**. Logs: the service → Logs.
 
 ## 3. Raspberry Pi on the office Wi-Fi
 1. Wi-Fi (once, on the Pi): `sudo nmcli dev wifi connect "<office Wi-Fi>" password "<password>"` — it reconnects by itself
