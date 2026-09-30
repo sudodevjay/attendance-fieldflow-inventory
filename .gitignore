@@ -18,3 +18,6 @@ web/**/*.tsbuildinfo
 
 # Passwords / keys (local only, never push)
 *.local.md
+
+# Built apps (APK), not in git: too large
+release/
