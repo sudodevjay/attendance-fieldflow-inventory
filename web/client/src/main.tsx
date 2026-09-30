@@ -20,6 +20,7 @@ import { Settings } from './pages/Settings';
 import { Shifts } from './pages/Shifts';
 import { PortalAdmin } from './pages/PortalAdmin';
 import { PortalRoot } from './portal/PortalApp';
+import { WifiSetupRoot } from './wifi/WifiSetup';
 import { Button, Icon, Input } from './ui';
 
 function Login({ onDone }: { onDone: (user: string) => void }) {
@@ -133,6 +134,8 @@ function Root() {
   );
 }
 
-// /me = employee portal (own login); everything else = the administrator program.
-const portal = location.pathname === '/me' || location.pathname.startsWith('/me/');
-createRoot(document.getElementById('root')!).render(<StrictMode>{portal ? <PortalRoot /> : <Root />}</StrictMode>);
+// /me = employee portal (own login); /wifisetup = the Pi's Wi-Fi (own password); everything else = the administrator program.
+const path = location.pathname.replace(/\/+$/, '');
+const portal = path === '/me' || path.startsWith('/me/');
+const wifi = path === '/wifisetup';
+createRoot(document.getElementById('root')!).render(<StrictMode>{portal ? <PortalRoot /> : wifi ? <WifiSetupRoot /> : <Root />}</StrictMode>);

@@ -20,6 +20,7 @@ import { punchRoutes } from './punch.routes';
 import { reportRoutes } from './report.routes';
 import { settingsRoutes } from './settings.routes';
 import { scheduleRoutes, shiftRoutes } from './shift.routes';
+import { wifiSetupRoutes } from './wifi.routes';
 
 export const api = Router();
 
@@ -28,6 +29,7 @@ api.use('/auth/login', auditTrail((req) => String(req.body?.user || 'Supervisor'
 api.use('/auth', authRoutes);
 api.use('/lx50', piRoutes);
 api.use('/portal', portalCors, portalRoutes);
+api.use('/wifisetup', wifiSetupRoutes);
 
 // ---- administrator program: logged in, allowed by the role, changes written to the audit log
 api.use(requireAdmin);

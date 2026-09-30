@@ -24,3 +24,6 @@ services:
       # First administrator password (only used while none is set; change it later in the program).
       - key: ADMIN_PASSWORD
         sync: false
+      # Password of the /wifisetup page (the Pi's Wi-Fi), only used while none is set.
+      - key: WIFI_SETUP_PASSWORD
+        sync: false

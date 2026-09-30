@@ -1,0 +1,15 @@
+[Unit]
+Description=LX50 Pi Wi-Fi agent (/wifisetup page of the web server)
+After=network-online.target NetworkManager.service
+Wants=network-online.target
+
+[Service]
+# root: it changes the Wi-Fi with nmcli. It only talks to the web server in /etc/lx50pi/config.ini ([cloud] / [wifi]).
+User=root
+WorkingDirectory=/opt/lx50pi
+ExecStart=/opt/lx50pi/venv/bin/python -m lx50pi -c /etc/lx50pi/config.ini wifi
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -19,6 +19,7 @@ Google Drive / pendrive par bhi rakhein.
 |---|---|
 | **App (admin)** | https://zk-attendance.onrender.com — login: koi bhi user name + admin password |
 | **Employee portal** | https://zk-attendance.onrender.com/me (AC No + password) |
+| **Pi Wi-Fi badalna** | https://zk-attendance.onrender.com/wifisetup — alag password (Render env `WIFI_SETUP_PASSWORD`). Pi ke aas-paas ke Wi-Fi dikhte hain, ek chuno + password → Pi us par shift ho jata hai. Saved sirf 2: naya (priority 999) + fallback `satyendra` (900); purana delete. Galat password = Pi purane Wi-Fi par wapas |
 | **Mobile app** | Server address: `https://zk-attendance.onrender.com` (`https://` zaroor likhein) |
 | **Code** | GitHub `sudodevjay/attendancecontroller`, branch **`render-postgres`** (push = Render apne aap deploy karta hai) |
 | **Render** (hosting, free) | https://dashboard.render.com → service **zk-attendance** (`srv-dau99mek1f9s73at5u9g`), region Singapore, root `web/`, build `npm run install:all && npm run build`, start `npm start`, health check `/api/auth/status` |
@@ -27,6 +28,7 @@ Google Drive / pendrive par bhi rakhein.
 | Database connection | **Session pooler**: host `aws-0-ap-southeast-1.pooler.supabase.com`, port `5432`, database `postgres`, user `postgres.jvwliosayqsnfbgvefnu` → `postgresql://postgres.jvwliosayqsnfbgvefnu:<PASSWORD>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres` ("Direct connection" Render par nahi chalta: IPv6) |
 | **Raspberry Pi** | Raspberry Pi 4, Debian 13, user `housys`, hostname `housys` (`housys.local` same Wi-Fi par) |
 | Pi remote access | **Tailscale**: naam `housys-pi`, IP `100.107.8.31` → `ssh housys@housys-pi` (laptop / phone par Tailscale on, same account) |
+| Pi Wi-Fi agent | `lx50pi-wifi` (systemd, root, boot par chalu): har 5 s `/api/lx50/wifi` se /wifisetup ke commands leta hai. Log: `journalctl -u lx50pi-wifi -f`. Config `[wifi]` (`fallback_ssid = satyendra`) |
 | Pi service | `lx50pi` (systemd, boot par chalu). Config `/etc/lx50pi/config.ini` (purani copy `config.ini.bak-*`), local punches `/var/lib/lx50pi/lx50.db` |
 | Pi → cloud | `[cloud]` me `url / users_url / commands_url = https://zk-attendance.onrender.com/api/lx50/{punches,users,commands}`, `token = <Pi token>`, `verify_tls = yes` |
 | LX50 | Pi → **USB 2.0 hub** → LX50 (LX50 apne DC power par; hub ke bina USB se gir jata hai). Serial `NPT6262703374` |
@@ -40,7 +42,7 @@ Google Drive / pendrive par bhi rakhein.
 | Pi ke logs | `journalctl -u lx50pi -f` (live) / `journalctl -u lx50pi -n 50` |
 | Pi service restart | `sudo systemctl restart lx50pi` |
 | Pi device check | `sudo systemctl stop lx50pi` → `sudo -u lx50pi /opt/lx50pi/venv/bin/python -m lx50pi -c /etc/lx50pi/config.ini info` → `sudo systemctl start lx50pi` (program `/opt/lx50pi`) |
-| Naya Wi-Fi (office) jodna | `sudo nmcli dev wifi connect "<naam>" password "<password>"` — save ho jata hai, apne aap judta hai. Saved list: `nmcli con show` |
+| Naya Wi-Fi (office) jodna | **Aasaan:** phone se https://zk-attendance.onrender.com/wifisetup (Pi ko internet chahiye: jahan naya Wi-Fi nahi hai wahan phone ka hotspot `satyendra` on karo, Pi usse judega, phir page se naya Wi-Fi chuno). Ya SSH se: `sudo nmcli dev wifi connect "<naam>" password "<password>"`. Saved list: `nmcli con show` |
 | Pi ka internet check | `curl -I https://zk-attendance.onrender.com` |
 | Code change deploy | `git push` (branch `render-postgres`) → Render ~3–5 min me deploy. Status / logs: Render dashboard → zk-attendance → Events / Logs |
 | Manual redeploy | Render dashboard → zk-attendance → **Manual Deploy → Deploy latest commit** |

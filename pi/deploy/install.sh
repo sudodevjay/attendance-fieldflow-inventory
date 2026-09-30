@@ -12,7 +12,7 @@ python3 -m venv /opt/lx50pi/venv
 chown -R lx50pi /var/lib/lx50pi
 chown root:lx50pi /etc/lx50pi/config.ini && chmod 640 /etc/lx50pi/config.ini
 cp deploy/99-lx50.rules /etc/udev/rules.d/ && udevadm control --reload-rules && udevadm trigger
-cp deploy/lx50pi.service /etc/systemd/system/ && systemctl daemon-reload
+cp deploy/lx50pi.service deploy/lx50pi-wifi.service /etc/systemd/system/ && systemctl daemon-reload
 echo "Installed. Edit /etc/lx50pi/config.ini, test with:"
 echo "  sudo -u lx50pi /opt/lx50pi/venv/bin/python -m lx50pi -c /etc/lx50pi/config.ini info"
-echo "then: sudo systemctl enable --now lx50pi"
+echo "then: sudo systemctl enable --now lx50pi lx50pi-wifi"

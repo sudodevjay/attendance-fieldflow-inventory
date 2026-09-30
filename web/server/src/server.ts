@@ -9,6 +9,7 @@ import { config } from './config';
 import { getPool } from './config/db';
 import { ensureWebTables } from './config/schema';
 import { hasPassword, setInitialPassword } from './services/auth.service';
+import { initWifiPassword } from './services/wifi.service';
 
 async function main() {
   await getPool();
@@ -18,6 +19,7 @@ async function main() {
     await setInitialPassword(process.env.ADMIN_PASSWORD);
     console.log('Administrator password set from ADMIN_PASSWORD.');
   }
+  await initWifiPassword(process.env.WIFI_SETUP_PASSWORD);
   // '::' = IPv6 and IPv4, so a Pi that only reaches this PC over IPv6 (mobile hotspot) works too.
   app.listen(config.port, '::', () => console.log(`ZK Attendance web server on http://localhost:${config.port}`));
 }

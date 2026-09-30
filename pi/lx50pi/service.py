@@ -21,6 +21,8 @@ DEFAULTS = {
     'cloud': {'url': '', 'users_url': '', 'commands_url': '', 'token': '', 'device_name': '', 'batch_size': '200',
               'verify_tls': 'yes'},
     'store': {'path': 'lx50.db'},
+    # Wi-Fi agent (wifi.py): url empty = [cloud] commands_url with /commands -> /wifi
+    'wifi': {'url': '', 'interface': 'wlan0', 'fallback_ssid': 'satyendra', 'interval_seconds': '5'},
 }
 
 

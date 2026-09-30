@@ -11,6 +11,7 @@
              finger on the LX50 three times
   once       one service cycle: read device -> SQLite -> cloud
   run        the service loop (what systemd starts)
+  wifi       the Wi-Fi agent for the /wifisetup page (root, systemd lx50pi-wifi.service; see wifi.py)
   simulate   run a fake device on UDP/TCP for testing (see --sim-* options)
 """
 import argparse
@@ -28,7 +29,7 @@ def main(argv=None):
     ap.add_argument('-c', '--config', help='config file (INI); defaults are used when omitted')
     ap.add_argument('-v', '--verbose', action='store_true', help='log every packet')
     ap.add_argument('command', choices=['probe', 'info', 'users', 'logs', 'setuser', 'deluser', 'enroll', 'once',
-                                        'run', 'simulate'])
+                                        'run', 'wifi', 'simulate'])
     ap.add_argument('user_id', nargs='?', help='setuser / deluser / enroll: the user id (digits)')
     ap.add_argument('name', nargs='?', help='setuser: the name')
     ap.add_argument('--password', default='')
@@ -77,6 +78,9 @@ def main(argv=None):
         Service(cfg).run_once()
     elif a.command == 'run':
         Service(cfg).run_forever()
+    elif a.command == 'wifi':
+        from .wifi import Agent
+        Agent(cfg).run_forever()
     elif a.command == 'simulate':
         dev = simulator.FakeDevice()
         from datetime import datetime, timedelta

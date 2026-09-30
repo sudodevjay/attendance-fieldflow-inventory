@@ -55,6 +55,10 @@ Every push to the branch deploys again. Logs: Render dashboard â†’ the service â
 4. `sudo systemctl enable --now lx50pi` (or `sudo systemctl restart lx50pi`), then `journalctl -u lx50pi -f`: punch on the
    LX50 and watch it arrive; the device shows **Online** in the Machine List.
 
+Wi-Fi from anywhere: `https://<app>.onrender.com/wifisetup` (password = Render env `WIFI_SETUP_PASSWORD`) lists the
+networks around the Pi and switches it to the chosen one (Pi service `lx50pi-wifi`, see `pi/lx50pi/wifi.py`). Only the
+chosen network (priority 999) and the fallback hotspot (`[wifi] fallback_ssid`, priority 900) stay saved.
+
 Working from home: install Tailscale on the Pi and your laptop (free): `curl -fsSL https://tailscale.com/install.sh | sh`,
 `sudo tailscale up`. Then `ssh housys@<pi name>` works from anywhere.
 
