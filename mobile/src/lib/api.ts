@@ -24,13 +24,16 @@ async function write(key: string, value: string) {
   else await SecureStore.deleteItemAsync(key);
 }
 
+/** The cloud server (Render); the login screen starts with it, another address can be typed there. */
+export const DEFAULT_SERVER = 'https://zk-attendance.onrender.com';
+
 let server = '';
 let token = '';
 let onLogout: () => void = () => {};
 
 export const session = {
   async load() {
-    server = await read(SERVER_KEY);
+    server = (await read(SERVER_KEY)) || DEFAULT_SERVER;
     token = await read(TOKEN_KEY);
     return { server, token };
   },
