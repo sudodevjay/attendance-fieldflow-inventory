@@ -18,6 +18,7 @@ import { Reports } from './pages/Reports';
 import { Schedule } from './pages/Schedule';
 import { Settings } from './pages/Settings';
 import { Shifts } from './pages/Shifts';
+import { Sites } from './pages/Sites';
 import { PortalAdmin } from './pages/PortalAdmin';
 import { PortalRoot } from './portal/PortalApp';
 import { WifiSetupRoot } from './wifi/WifiSetup';
@@ -126,6 +127,7 @@ function Root() {
             <Route path="leave" element={<Leave />} />
             <Route path="settings" element={<Settings />} />
             <Route path="portal-admin" element={<PortalAdmin />} />
+            <Route path="sites" element={<Sites />} />
             <Route path="*" element={<Dashboard />} />
           </Route>
         </Routes>

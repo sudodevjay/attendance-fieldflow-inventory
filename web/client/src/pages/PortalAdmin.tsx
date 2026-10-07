@@ -172,7 +172,15 @@ function Settings() {
         <div className="space-y-3 p-4">
           <Field label="Office name (shown at the bottom of the employee sidebar)"><Input value={f.officeName} placeholder="e.g. Head Office" onChange={(e) => setF({ ...f, officeName: e.target.value })} /></Field>
           <Check label="Employees may check in / out from the portal and the mobile app" checked={f.allowCheckIn} onChange={(v) => setF({ ...f, allowCheckIn: v })} />
-          <Note>A portal check-in is saved as a manual punch with the remark "Self check-in (web / app)", so it is visible in the AC Log and can be deleted there.</Note>
+          <Check label="Only at a work site: check-in needs the GPS location inside a site's radius and a selfie" checked={f.checkInAtSite} disabled={!f.allowCheckIn} onChange={(v) => setF({ ...f, checkInAtSite: v })} />
+          {f.checkInAtSite && (
+            <Field label="Refuse GPS readings less exact than (metres)">
+              <Input type="number" min={10} max={1000} className="w-32" value={f.maxGpsAccuracy} onChange={(e) => setF({ ...f, maxGpsAccuracy: e.target.value })} />
+            </Field>
+          )}
+          <Note>{f.checkInAtSite
+            ? <>Set up the sites in <a className="text-brand-700 underline" href="/sites?tab=sites">Site Attendance → Work Sites</a>. A check-in is saved as a manual punch with the remark "Site check-in: &lt;site&gt;"; the selfie, distance and map are in Site Attendance.</>
+            : <>A portal check-in is saved as a manual punch with the remark "Self check-in (web / app)", from anywhere and without a photo. It is visible in the AC Log and can be deleted there.</>}</Note>
           <Button variant="primary" icon="save" onClick={async () => { const r = await app.run(() => api.put('/portal-admin/settings', f)); if (r) await app.alert(r.message); }}>Save</Button>
         </div>
       </Card>

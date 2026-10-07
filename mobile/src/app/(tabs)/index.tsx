@@ -6,6 +6,7 @@ import { Alert, Image, Pressable, RefreshControl, ScrollView, Text, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, two } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { siteCheckIn } from '@/lib/siteCheckIn';
 import { Badge, Btn, C, Card, Empty, H, Loading, Muted, Row } from '@/lib/ui';
 
 export default function Home() {
@@ -25,8 +26,9 @@ export default function Home() {
   const checkin = async () => {
     setBusy(true);
     try {
-      const r = await api.post('/checkin', { checkOut: data.today.checkedIn, source: 'app' });
-      Alert.alert(r.message);
+      const message = await siteCheckIn(data.today.checkedIn);
+      if (message === null) return;
+      Alert.alert(message);
       await load();
     } catch (e: any) { Alert.alert('Check-in', e.message); } finally { setBusy(false); }
   };

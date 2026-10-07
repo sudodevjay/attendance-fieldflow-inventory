@@ -6,6 +6,7 @@ import { isPortalRole } from '../utils/permissions';
 import { filterScope } from '../utils/scope';
 import { endSessions, hashPassword, randomPassword } from './portalAuth.service';
 import { getSetting, setSetting } from './settings.service';
+import * as sites from './site.service';
 
 export async function list() {
   const rows = await query(`SELECT e.Id, e.EnrollNo, e.Name, d.Name Department, e.IsActive, a.IsManager, a.Role, a.MustChange,
@@ -45,10 +46,15 @@ export async function removeMany(ids: number[]) {
 }
 
 export async function settings() {
-  return { allowCheckIn: (await getSetting('Portal.AllowCheckIn', '1')) === '1', officeName: await getSetting('Portal.OfficeName') };
+  return {
+    allowCheckIn: (await getSetting('Portal.AllowCheckIn', '1')) === '1', officeName: await getSetting('Portal.OfficeName'),
+    checkInAtSite: await sites.siteRequired(), maxGpsAccuracy: await sites.maxAccuracy(),
+  };
 }
 
-export async function saveSettings(allowCheckIn: boolean, officeName: string) {
+export async function saveSettings(allowCheckIn: boolean, officeName: string, checkInAtSite?: boolean, maxGpsAccuracy?: number) {
   await setSetting('Portal.AllowCheckIn', allowCheckIn ? '1' : '0');
   await setSetting('Portal.OfficeName', officeName.trim());
+  // Older clients do not send the site settings: keep them.
+  if (checkInAtSite !== undefined) await sites.saveSiteSettings(checkInAtSite, maxGpsAccuracy ?? (await sites.maxAccuracy()));
 }

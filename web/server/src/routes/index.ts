@@ -19,6 +19,7 @@ import { portalAdminRoutes } from './portalAdmin.routes';
 import { punchRoutes } from './punch.routes';
 import { reportRoutes } from './report.routes';
 import { settingsRoutes } from './settings.routes';
+import { siteRoutes } from './site.routes';
 import { scheduleRoutes, shiftRoutes } from './shift.routes';
 import { wifiSetupRoutes } from './wifi.routes';
 
@@ -46,6 +47,7 @@ api.use('/employees', employeeHrRoutes);
 api.use('/employees', employeeRoutes);
 api.use('/documents', documentRoutes);
 api.use('/logs', punchRoutes);
+api.use('/sites', siteRoutes);
 api.use('/leave', leaveHrRoutes);
 api.use('/leave', leaveRoutes);
 api.use('/reports', reportRoutes);

@@ -17,6 +17,7 @@ import { dateText, lateRows, leaveRow, portalEmployee, stats } from './employeeV
 import { salarySlip } from './export.service';
 import { computePay } from './payroll.service';
 import { companyName, getSetting } from './settings.service';
+import * as sites from './site.service';
 import { PunchSource } from './sync.service';
 import * as team from './team.service';
 
@@ -37,7 +38,7 @@ export async function profile(id: number) {
     isManager: m.IsManager || (await isManager(id)),
     // Employee / TeamLead / Manager (isManager = has a team: team lead or manager).
     role: (await portalRole(id)) ?? 'Employee',
-    mustChange: m.MustChange, company: await companyName(), office: await officeName(), allowCheckIn: await checkInAllowed(),
+    mustChange: m.MustChange, company: await companyName(), office: await officeName(), allowCheckIn: await checkInAllowed(), checkInAtSite: await sites.siteRequired(),
     reportingManager: p.ReportingManager,
     // HR profile; the bank account and Aadhaar only with their last digits.
     hr: {
@@ -118,14 +119,19 @@ export async function home(id: number) {
   };
 }
 
-/** Web / app check-in: a punch with source Manual and remark "Self check-in", when the administrator allows it. */
-export async function checkIn(id: number, checkOut: boolean, source: string) {
+/**
+ * Web / app check-in: a punch with source Manual, when the administrator allows it. With "check-in at a work site" on
+ * (the default) it needs the GPS position inside a site's radius and a selfie (see site.service); otherwise it is a plain
+ * "Self check-in".
+ */
+export async function checkIn(id: number, checkOut: boolean, source: string, geo: sites.SiteCheckIn = {}) {
   if (!(await checkInAllowed())) throw new UserError('Check-in from the portal / app is turned off. Please punch on the device.');
   const e = await one('SELECT EnrollNo FROM Employees WHERE Id = @id', { id });
   const t = now();
   if (await one(`SELECT Id FROM AttendanceLogs WHERE EnrollNo = @e AND PunchTime > CAST(@t AS timestamp) LIMIT 1`, { e: e.EnrollNo, t: sqlDT(t - 60_000) }))
     throw new UserError('You already punched in the last minute.');
   const where = source === 'app' ? 'app' : 'web';
+  if (await sites.siteRequired()) return sites.punch(id, e.EnrollNo, t, checkOut, where, await sites.verify(id, geo));
   await exec(`INSERT INTO AttendanceLogs (EnrollNo, PunchTime, VerifyMode, InOutMode, WorkCode, Source, Remark)
     VALUES (@e, CAST(@t AS timestamp), -1, @io, 0, @src, @r)`,
   { e: e.EnrollNo, t: sqlDT(t), io: checkOut ? 1 : 0, src: PunchSource.Manual, r: `Self check-${checkOut ? 'out' : 'in'} (${where})` });

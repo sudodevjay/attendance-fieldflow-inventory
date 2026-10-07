@@ -24,6 +24,7 @@ portalRoutes.post('/logout', c.logout);
 portalRoutes.post('/password', c.password);
 portalRoutes.get('/me', c.profile);
 portalRoutes.get('/home', c.home);
+portalRoutes.get('/checkin', c.checkInInfo);
 portalRoutes.post('/checkin', c.checkIn);
 portalRoutes.get('/attendance', c.attendance);
 portalRoutes.get('/leave', c.leave);

@@ -26,6 +26,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: 'Dashboard', icon: 'home', color: '#16a34a', to: '/' },
       { label: 'Employee Requests / Approvals', icon: 'check', color: '#16a34a', to: '/portal-admin' },
+      { label: 'Site Attendance (GPS + selfie)', icon: 'photo', color: '#0891b2', to: '/sites' },
       { label: 'Shift Roster (rotating shifts)', icon: 'calendar', color: '#a52a2a', to: '/roster' },
       { label: 'Payroll Setup (structure, PF / ESI)', icon: 'rule', color: '#2e8b57', to: '/payroll', area: 'payroll' },
       { label: 'Notifications / Announcements', icon: 'info', color: '#ea580c', to: '/notifications' },
@@ -63,6 +64,7 @@ export const NAV: NavGroup[] = [
       { label: 'Leave / Holidays', icon: 'flag', color: '#7e22ce', to: '/leave' },
       { label: 'Append Manual Record (AC Log)', icon: 'clock', color: '#2563eb', action: 'manualPunch', area: 'attendance', write: true },
       { label: 'Employee Requests (Portal)', icon: 'check', color: '#16a34a', to: '/portal-admin' },
+      { label: 'Site Attendance / Work Sites', icon: 'photo', color: '#0891b2', to: '/sites' },
       { label: 'Attendance Rule', icon: 'rule', color: '#4682b4', action: 'attendanceRule' },
       { label: 'Salary Rule', icon: 'rule', color: '#2e8b57', action: 'salaryRule', area: 'payroll' },
     ],

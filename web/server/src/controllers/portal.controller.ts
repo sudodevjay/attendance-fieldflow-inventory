@@ -3,6 +3,7 @@ import * as documents from '../services/document.service';
 import * as requests from '../services/employeeRequest.service';
 import * as portal from '../services/portal.service';
 import * as portalAuth from '../services/portalAuth.service';
+import * as sites from '../services/site.service';
 import * as team from '../services/team.service';
 import { UserError } from '../utils/errors';
 import { bearer, idParam, sendDocument, sendFile, sendJpeg } from '../utils/http';
@@ -31,7 +32,9 @@ export const profile = async (req: Request, res: Response) => res.json(await por
 export const home = async (req: Request, res: Response) => res.json(await portal.home(me(req)));
 
 export const checkIn = async (req: Request, res: Response) =>
-  res.json({ message: await portal.checkIn(me(req), !!req.body.checkOut, String(req.body.source ?? 'web')) });
+  res.json({ message: await portal.checkIn(me(req), !!req.body.checkOut, String(req.body.source ?? 'web'), req.body) });
+/** Work sites and GPS rules for the check-in screen. */
+export const checkInInfo = async (req: Request, res: Response) => res.json(await sites.checkInInfo(me(req)));
 
 export const attendance = async (req: Request, res: Response) => res.json(await portal.attendanceMonth(me(req), String(req.query.month ?? '')));
 

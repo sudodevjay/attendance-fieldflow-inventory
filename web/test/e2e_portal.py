@@ -77,9 +77,37 @@ def main():
         home = call('GET', '/portal/home', token=tok)
         check('Portal Worker' in home['birthdays'], "today's birthday is shown")
         check(home['team'] is None, 'no team space for a normal employee')
+        # site check-in (default on): GPS inside a work site's radius + selfie
+        check(call('GET', '/portal/me', token=tok)['checkInAtSite'] is True, 'check-in at a work site is on by default')
         r = call('POST', '/portal/checkin', {}, tok)
-        check('Checked in' in r['message'], 'check-in: ' + r['message'])
-        check(call('POST', '/portal/checkin', {}, tok).get('status') == 400, 'second check-in within a minute refused')
+        check(r.get('status') == 400 and 'selfie' in r['error'], 'check-in without location / selfie refused: ' + r.get('error', ''))
+        check(call('POST', '/sites', {'Name': 'E2E Site', 'Latitude': 200, 'Longitude': 77}).get('status') == 400, 'site with a wrong latitude refused')
+        site = call('POST', '/sites', {'Name': 'E2E Site', 'Latitude': 28.6139, 'Longitude': 77.2090, 'RadiusMeters': 150})['id']
+        other = call('POST', '/sites', {'Name': 'E2E Other', 'Latitude': 19.0760, 'Longitude': 72.8777, 'RadiusMeters': 150, 'AllEmployees': False, 'EmployeeIds': [e2]})['id']
+        info = call('GET', '/portal/checkin', token=tok)
+        check([x['name'] for x in info['sites']] == ['E2E Site'], "employee sees only the sites they may use: " + str([x['name'] for x in info['sites']]))
+        selfie = '/9j/' + 'A' * 400
+        far = {'lat': 28.6239, 'lng': 77.2090, 'accuracy': 12, 'photo': selfie}  # about 1.1 km north
+        r = call('POST', '/portal/checkin', far, tok)
+        check(r.get('status') == 400 and '1.1 km from E2E Site' in r['error'], 'check-in far from the site refused: ' + r.get('error', ''))
+        near = {'lat': 28.6146, 'lng': 77.2090, 'accuracy': 15, 'photo': selfie}  # about 80 m
+        check('fake' in call('POST', '/portal/checkin', {**near, 'mocked': True}, tok).get('error', ''), 'mock location refused')
+        check('weak' in call('POST', '/portal/checkin', {**near, 'accuracy': 400}, tok).get('error', ''), 'weak GPS refused')
+        check('selfie' in call('POST', '/portal/checkin', {**near, 'photo': 'bm90IGEganBlZw=='}, tok).get('error', ''), 'a non-JPEG selfie refused')
+        r = call('POST', '/portal/checkin', {**near, 'source': 'app'}, tok)
+        check('Checked in' in r.get('message', '') and 'E2E Site' in r['message'], 'site check-in: ' + str(r))
+        check(call('POST', '/portal/checkin', near, tok).get('status') == 400, 'second check-in within a minute refused')
+        sp = call('GET', f"/sites/punches?from={date.today().isoformat()}&to={date.today().isoformat()}")
+        mine = [x for x in sp if x['EnrollNo'] == '961']
+        check(len(mine) == 1 and mine[0]['SiteName'] == 'E2E Site' and 70 <= mine[0]['DistanceMeters'] <= 90 and mine[0]['Source'] == 'app',
+              f"site punch with distance for HR: {mine[0]['DistanceMeters'] if mine else None} m")
+        check(call('GET', f"/sites/punches/{mine[0]['Id']}/photo", raw=True)[:3] == bytes([0xff, 0xd8, 0xff]), 'selfie served as JPEG')
+        logs = call('GET', f"/logs?from={date.today().isoformat()}&to={date.today().isoformat()}&emp={e1}")
+        check(any('Site check-in: E2E Site (app)' in (x.get('Remark') or '') for x in logs['rows']), 'AC Log has the site punch')
+        check(call('PUT', f'/sites/{other}', {'Name': 'E2E Other', 'Latitude': 19.0760, 'Longitude': 72.8777, 'RadiusMeters': 150, 'AllEmployees': False, 'EmployeeIds': []}).get('status') == 400,
+              'site limited to nobody refused')
+        call('DELETE', f'/sites/{other}')
+        check([x['Name'] for x in call('GET', '/sites') if x['Name'].startswith('E2E')] == ['E2E Site'], 'site deleted')
         home = call('GET', '/portal/home', token=tok)
         check(home['today']['checkedIn'] and len(home['today']['punches']) == 1, 'home shows the check-in')
         month = call('GET', '/portal/attendance?month=' + date.today().strftime('%Y-%m'), token=tok)
@@ -147,7 +175,12 @@ def main():
         call('PUT', '/portal-admin/settings', {'allowCheckIn': False, 'officeName': 'E2E Office'})
         check(call('POST', '/portal/checkin', {'checkOut': True}, tok).get('status') == 400, 'check-in refused when turned off')
         check(call('GET', '/portal/me', token=tok)['office'] == 'E2E Office', 'office name from the settings')
-        call('PUT', '/portal-admin/settings', {'allowCheckIn': True, 'officeName': ''})
+        call('PUT', '/portal-admin/settings', {'allowCheckIn': True, 'officeName': '', 'checkInAtSite': False})
+        time.sleep(61)
+        r = call('POST', '/portal/checkin', {'checkOut': True}, tok)
+        check('Checked out' in r.get('message', ''), 'with "only at a work site" off, a plain check-out works: ' + str(r))
+        call('PUT', '/portal-admin/settings', {'allowCheckIn': True, 'officeName': '', 'checkInAtSite': True, 'maxGpsAccuracy': 100})
+        call('DELETE', f'/sites/{site}')
 
         # removing the login ends the session
         call('POST', '/portal-admin/accounts/delete', {'ids': [e1]})

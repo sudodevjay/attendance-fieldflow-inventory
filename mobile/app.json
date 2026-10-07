@@ -32,7 +32,15 @@
         "expo-image-picker",
         {
           "photosPermission": "Choose a photo of your expense receipt.",
-          "cameraPermission": "Take a photo of your expense receipt."
+          "cameraPermission": "Take a selfie at the work site to check in, or a photo of your expense receipt."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Your location is checked when you check in at a work site.",
+          "isAndroidBackgroundLocationEnabled": false,
+          "isIosBackgroundLocationEnabled": false
         }
       ],
       "expo-font"

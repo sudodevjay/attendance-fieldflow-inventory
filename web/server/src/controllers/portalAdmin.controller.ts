@@ -37,6 +37,7 @@ export const requestDecide = async (req: Request, res: Response) =>
 export const settings = async (_req: Request, res: Response) => res.json(await accounts.settings());
 
 export async function saveSettings(req: Request, res: Response) {
-  await accounts.saveSettings(!!req.body.allowCheckIn, String(req.body.officeName ?? ''));
+  await accounts.saveSettings(!!req.body.allowCheckIn, String(req.body.officeName ?? ''),
+    req.body.checkInAtSite === undefined ? undefined : !!req.body.checkInAtSite, Number(req.body.maxGpsAccuracy) || undefined);
   res.json({ message: 'Saved.' });
 }

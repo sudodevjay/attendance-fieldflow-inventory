@@ -14,7 +14,7 @@ export interface Me {
   gender: string; badgeNo: string; joinDate: string; birthDate: string; address: string; photo: string | null; isManager: boolean;
   /** Employee / TeamLead / Manager (isManager = has a team) */
   role?: string;
-  mustChange: boolean; company: string; office: string; allowCheckIn: boolean;
+  mustChange: boolean; company: string; office: string; allowCheckIn: boolean; checkInAtSite?: boolean;
   reportingManager?: string;
   /** HR profile (bank account and Aadhaar masked). */
   hr?: Record<string, string>;

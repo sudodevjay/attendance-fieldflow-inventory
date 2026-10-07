@@ -5,6 +5,7 @@ import { useApp } from '../app';
 import { DataTable } from '../DataTable';
 import { Button, Check, Field, Icon, Input, Modal, Note, Select, StatusBadge, TextArea } from '../ui';
 import { inr, papi, photoToBase64, ptoken, two } from './papi';
+import { SiteCheckIn } from './SiteCheckIn';
 import { CompOffDialog, fieldLabel, OvertimeDialog, ProfileChangeDialog } from './HrPages';
 import { Avatar, ChangePassword, Section, useMe } from './PortalApp';
 
@@ -77,10 +78,12 @@ export function Home() {
   const [teamTab, setTeamTab] = useState<'leave' | 'other'>('leave');
   const [busy, setBusy] = useState(false);
   const [regularise, setRegularise] = useState<{ date: string; time: string } | null>(null);
+  const [siteCheckIn, setSiteCheckIn] = useState(false);
   if (!data) return <Loading />;
   const first = me.name.split(' ')[0];
 
   const checkin = async () => {
+    if (me.checkInAtSite) return setSiteCheckIn(true);
     setBusy(true);
     const r = await app.run(() => papi.post('/checkin', { checkOut: data.today.checkedIn }));
     setBusy(false);
@@ -238,6 +241,8 @@ export function Home() {
         )}
       </div>
       {regularise && <RegulariseDialog initial={regularise} onClose={() => setRegularise(null)} onSaved={reload} />}
+      {siteCheckIn && <SiteCheckIn checkOut={data.today.checkedIn} onClose={() => setSiteCheckIn(false)}
+        onDone={async (m) => { setSiteCheckIn(false); await app.alert(m); reload(); }} />}
     </Wrap>
   );
 }

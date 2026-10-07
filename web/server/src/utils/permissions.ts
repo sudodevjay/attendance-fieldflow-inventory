@@ -23,7 +23,7 @@ const ALL: Area[] = ['dashboard', 'employees', 'attendance', 'leave', 'reports',
 const AREAS: [RegExp, Area][] = [
   [/^\/dashboard/, 'dashboard'],
   [/^\/(departments|employees|documents)/, 'employees'],
-  [/^\/(shifts|schedule|roster|logs)/, 'attendance'],
+  [/^\/(shifts|schedule|roster|logs|sites)/, 'attendance'],
   [/^\/leave/, 'leave'],
   [/^\/reports\/salary-slip/, 'payroll'],
   [/^\/reports/, 'reports'],
