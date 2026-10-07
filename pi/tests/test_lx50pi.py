@@ -252,7 +252,7 @@ class ServiceTests(unittest.TestCase):
         cfg = load_config()
         cfg.read_dict({'device': {'transport': 'udp', 'host': '127.0.0.1', 'port': str(port)},
                        'cloud': {'url': f'http://127.0.0.1:{cloud.server_port}/punches', 'token': 'abc'},
-                       'store': {'path': os.path.join(tmp, 'lx50.db')}})
+                       'store': {'path': os.path.join(tmp, 'lx50.db')}, 'poll': {'quiet_seconds': '0'}})
         svc = Service(cfg)
         self.addCleanup(svc.store.close)
 
@@ -284,7 +284,7 @@ class ServiceTests(unittest.TestCase):
         cfg = load_config()
         cfg.read_dict({'device': {'transport': 'udp', 'host': '127.0.0.1', 'port': str(port)},
                        'cloud': {'url': f'http://127.0.0.1:{cloud.server_port}/punches', 'token': 'abc'},
-                       'store': {'path': os.path.join(tmp, 'lx50.db')}})
+                       'store': {'path': os.path.join(tmp, 'lx50.db')}, 'poll': {'quiet_seconds': '0'}})
         svc = Service(cfg)
         self.addCleanup(svc.store.close)
         svc.run_once()
@@ -303,6 +303,64 @@ class ServiceTests(unittest.TestCase):
         body = cloud.requests[-1][1]
         self.assertEqual(body['device']['serial'], 'NEW0000002')
         self.assertEqual([p['user_id'] for p in body['punches']], ['7'])
+
+
+class QuietReadTests(unittest.TestCase):
+    """New punches are read once the device is quiet, with the device left enabled (no "Working" on the LX50)."""
+
+    def make(self, **poll):
+        fake = simulator.FakeDevice()
+        fake.add_punch('1', datetime(2026, 10, 8, 9, 0, 0))
+        srv, port = simulator.serve(fake, 'udp')
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        tmp = tempfile.mkdtemp()
+        cfg = load_config()
+        cfg.read_dict({'device': {'transport': 'udp', 'host': '127.0.0.1', 'port': str(port)},
+                       'store': {'path': os.path.join(tmp, 'lx50.db')}, 'poll': poll})
+        svc = Service(cfg)
+        self.addCleanup(svc.store.close)
+        self.assertEqual(svc.poll_device(), 1)  # first cycle: full read at once
+        return fake, svc
+
+    def test_waits_until_nobody_punches(self):
+        fake, svc = self.make(quiet_seconds='20', max_wait_seconds='120')
+        fake.add_punch('1', datetime(2026, 10, 8, 9, 1, 0))
+        self.assertEqual(svc.poll_device(), 0)          # just seen: not read yet
+        svc.pending['changed'] -= 10
+        fake.add_punch('1', datetime(2026, 10, 8, 9, 1, 30))
+        self.assertEqual(svc.poll_device(), 0)          # another punch: the quiet time starts again
+        svc.pending['changed'] -= 20
+        with self.assertLogs('lx50pi.service', 'INFO') as logs:
+            self.assertEqual(svc.poll_device(), 2)      # quiet for 20 s: both read, users not read again
+        self.assertIn('punch read', logs.output[-1])
+        self.assertIsNone(svc.pending)
+
+    def test_rush_is_read_after_max_wait(self):
+        fake, svc = self.make(quiet_seconds='20', max_wait_seconds='120')
+        for i in range(3):
+            fake.add_punch(str(i + 2), datetime(2026, 10, 8, 9, 2, i))
+            self.assertEqual(svc.poll_device(), 0)
+        svc.pending['first'] -= 120
+        fake.add_punch('9', datetime(2026, 10, 8, 9, 3, 0))
+        self.assertEqual(svc.poll_device(), 4)          # still punching, but waited long enough
+
+    def test_device_stays_enabled_unless_configured(self):
+        fake, svc = self.make(quiet_seconds='0')
+        fake.add_punch('1', datetime(2026, 10, 8, 9, 5, 0))
+        self.assertEqual(svc.poll_device(), 1)
+        self.assertEqual(fake.disables, 0)
+        fake, svc = self.make(quiet_seconds='0', disable_while_reading='yes')
+        self.assertEqual(fake.disables, 1)
+        self.assertTrue(fake.enabled)
+
+    def test_new_user_on_the_device_reads_users_at_once(self):
+        fake, svc = self.make(quiet_seconds='20')
+        fake.users.append(P.User(2, '2', 'Asha', P.USER_DEFAULT, '', 0))
+        with self.assertLogs('lx50pi.service', 'INFO') as logs:
+            svc.poll_device()
+        self.assertIn('full read', logs.output[-1])
+        self.assertEqual([u.user_id for u in svc.users], ['1', '2'])
 
 
 def _cloud_server(test):

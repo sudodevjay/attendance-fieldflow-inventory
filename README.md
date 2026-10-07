@@ -21,7 +21,7 @@ Google Drive / pendrive par bhi rakhein.
 | **Employee portal** | https://zk-attendance.onrender.com/me (AC No + password) |
 | **Roles (admin panel)** | Users & Roles (sirf SuperAdmin): **SuperAdmin** (sab + users, audit, backup, Pi), **Admin** (baaki sab), **HOD** (sirf apna department + sub-departments: employees, attendance, reports dekhe, leave / requests approve; salary aur settings nahi), **HR** (employees, holidays, shifts, attendance, leave, requests, reports), **Payroll**, **Viewer**. Supervisor password = SuperAdmin |
 | **Roles (portal / app)** | Employee Portal → Employee Logins → Role: **Employee**, **Team Lead** (apne neeche walon ko dekhe, pehla approve), **Manager** (apne neeche sab, team leads ki teams bhi, final approve). Kaun kiske neeche: Employees → HR Profile → **Reporting Manager**. Team lead ka reject = final |
-| **Pi Wi-Fi badalna** | https://zk-attendance.onrender.com/wifisetup — alag password (Render env `WIFI_SETUP_PASSWORD`). Pi ke aas-paas ke Wi-Fi dikhte hain, ek chuno + password → Pi us par shift ho jata hai. Saved sirf 2: naya (priority 999) + fallback `satyendra` (900); purana delete. Galat password = Pi purane Wi-Fi par wapas |
+| **Pi Wi-Fi badalna** | https://zk-attendance.onrender.com/wifisetup — alag password (Render env `WIFI_SETUP_PASSWORD`). Pi ke aas-paas ke Wi-Fi dikhte hain, ek chuno + password → Pi us par shift ho jata hai. Saved sirf 2: naya (priority 999) + fallback `satyendra` (900); purana delete. Galat password = Pi purane Wi-Fi par wapas. Naya Wi-Fi Pi ki **range me** hona chahiye (warna "network not found") |
 | **Mobile app** | Server address: `https://zk-attendance.onrender.com` (`https://` zaroor likhein) |
 | **Code** | GitHub `sudodevjay/attendancecontroller`, branch **`render-postgres`** (service public repo URL se bani hai: push ke baad **Manual Deploy** karna hota hai, neeche dekhein) |
 | **Render** (hosting, free) | https://dashboard.render.com → service **zk-attendance** (`srv-dau99mek1f9s73at5u9g`), region Singapore, root `web/`, build `npm run install:all && npm run build`, start `npm start`, health check `/api/auth/status` |
@@ -68,6 +68,45 @@ Google Drive / pendrive par bhi rakhein.
 | App "Could not start" / 500 errors | Render → Logs. Supabase project **paused**? (7 din bina activity) → Supabase dashboard → **Restore project** |
 | Database bhar gaya | Supabase free = 500 MB (photos / documents sabse zyada jagah lete hain). Dashboard → Database → usage |
 | Login bhool gaye | Supabase → SQL Editor: `DELETE FROM appsettings WHERE key = 'AdminPasswordHash';` → Render me `ADMIN_PASSWORD` set karke Manual Deploy (ab naya password lagega) |
+
+### Pi Wi-Fi / punch issues (2026-10-07) — agla kaam yahin se
+
+**Ab tak kya hua / kya kiya**
+
+| Baat | Detail |
+|---|---|
+| Gaon me Pi offline (Airtel Wi-Fi) | Wajah: purane project ki `wifi-fallback.service` (`/home/housys/piproject/wifi_apply.py`) har boot par `satyendra` dikhne par **baaki saare Wi-Fi profile delete** karti thi. Airtel_moha_9230 (30 Sept ko /wifisetup se juda, server ki `PiCommands` me record hai) isi se mita |
+| Purani services band | `wifi-fallback.service` aur `piaudio.service` **disabled + stopped** (files `/home/housys/piproject` me padi hain, delete nahi ki). Ab boot par sirf `lx50pi`, `lx50pi-wifi`, `tailscaled` (+ OS ki services) |
+| Airtel wapas joda | /wifisetup se `Airtel_moha_9230` (priority 999) + `satyendra` (900). 22:08 tak Pi Airtel par, signal 80%, punches upload ho rahe the |
+| Logs permanent | `/etc/systemd/journald.conf.d/zz-lx50pi-persistent.conf` (`Storage=persistent`, max 200M) — RPi OS ka `40-rpi-volatile-storage.conf` override. Ab reboot ke baad bhi purane logs: `journalctl --list-boots`, `journalctl -b -1 -u lx50pi -u lx50pi-wifi -u NetworkManager` |
+| Tailscale key expiry | Band hai (status me KeyExpiry nahi) |
+| Hotspot par ping kyu nahi | `satyendra` hotspot par phone ka data na chale to Pi offline. Laptop bhi usi hotspot par ho to ping local chal jata hai (internet ke bina), dusre network se nahi |
+
+**Wi-Fi kaise chunta hai:** NetworkManager **priority** se chunta hai, signal se nahi (Airtel 999 > satyendra 900). Ek
+Wi-Fi par juda ho to zyada priority wale par khud **wapas nahi jata** — sirf jab current wala toote / watchdog restart kare.
+
+**Khula issue 1 — Pi 2026-10-07 ~22:40 se offline.** Tailscale: offline; laptop `satyendra` par tha, Pi us par bhi
+nahi dikha (`housys.local` / MAC `d8:3a:dd` nahi). Andaza: site par raat me light kati. Subah check karna:
+1. Pi on hai? (red LED) Airtel router on hai aur us par internet chal raha hai? (phone Airtel se jod ke website kholo)
+2. Pi online aaye to: `journalctl --list-boots` + `journalctl -b -1 --no-pager -u lx50pi-wifi -u NetworkManager | tail -100`
+   → pata chalega light gayi (boot list me naya boot, purana achanak khatam) ya Wi-Fi/internet ka masla tha
+3. **Design ki kami (fix karna hai):** Airtel Wi-Fi juda ho par internet na ho to watchdog (`pi/lx50pi/wifi.py`,
+   3 min restart, 10 min driver reload) Wi-Fi restart karta hai, NetworkManager phir Airtel hi chunta hai → Pi kabhi
+   `satyendra` par nahi jata. Fix: internet 3–5 min na mile to khud fallback par jaye, kuch der baad Airtel dobara try
+
+**Issue 2 — "Working" dikhte waqt punch nahi lagta: FIX deploy (2026-10-08 00:00), subah test karna hai.**
+Wajah: har naye punch ke baad Pi device **DISABLE** karke saare users + ~2,513 punches padhta tha; USB par 0.2 s/packet
+= **~18 s** tak "Working", us beech ungli = punch kho jata (device queue nahi karta). Fix (`pi/lx50pi/service.py`):
+- punches device ko band kiye bina padhe jate hain (`[poll] disable_while_reading = no`; `yes` = purana SDK jaisa)
+- naya punch dikhe to turant nahi: 20 s koi punch na ho tab padho, bheed me max 120 s baad (`quiet_seconds`,
+  `max_wait_seconds`) → punch cloud par ~30 s–2 min me
+- users sirf jab user count badle / command chale / har 60 min; log me `(punch|full read in X s)`
+- Pi par sirf `service.py` badla, purani copy `/opt/lx50pi/service.py.bak-20261008-0000`
+  (wapas: `sudo cp` us file ko `/opt/lx50pi/lx50pi/service.py` par + `sudo systemctl restart lx50pi`)
+- **Subah check:** jab log me `read in` aaye (`journalctl -u lx50pi -f`) us waqt koi punch kare → device "Working"
+  na dikhaye aur punch save ho (agle read me "1 new"). Agar session khula hone par bhi "Working" dikhe to agla
+  kadam: `interval_seconds` badhana / read chhota karna
+- Note: Pi ka `/opt/lx50pi/lx50pi/uploader.py` repo se alag hai (pehle se) — dekhna kaunsa sahi hai
 
 Poori deploy guide (shuru se): [web/DEPLOY.md](web/DEPLOY.md). Pi ka protocol / setup: [pi/README.md](pi/README.md).
 

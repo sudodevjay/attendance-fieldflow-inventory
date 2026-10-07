@@ -17,7 +17,8 @@ log = logging.getLogger(__name__)
 DEFAULTS = {
     'device': {'transport': 'usb', 'usb_vid': '1b55', 'usb_pid': '0a01', 'usb_framing': 'zkusb',
                'password': '0', 'timeout': '5', 'chunk_size': '1024'},
-    'poll': {'interval_seconds': '15', 'full_read_minutes': '60'},
+    'poll': {'interval_seconds': '15', 'full_read_minutes': '60', 'quiet_seconds': '20', 'max_wait_seconds': '120',
+             'disable_while_reading': 'no'},
     'cloud': {'url': '', 'users_url': '', 'commands_url': '', 'token': '', 'device_name': '', 'batch_size': '200',
               'verify_tls': 'yes'},
     'store': {'path': 'lx50.db'},
@@ -54,8 +55,26 @@ class Service:
         self.batch = int(c['batch_size'])
         self.interval = float(cfg['poll']['interval_seconds'])
         self.full_every = float(cfg['poll']['full_read_minutes']) * 60
+        # Reading ~2,500 punches over USB takes many seconds (0.2 s per packet). A disabled device shows "Working"
+        # and drops a finger put on it, so punches are read with the device enabled (disable_while_reading = no),
+        # and new punches are read once nobody punched for quiet_seconds (at the latest max_wait_seconds after the
+        # first one): at the morning rush the device is not read after every single punch.
+        self.quiet = float(cfg['poll']['quiet_seconds'])
+        self.max_wait = float(cfg['poll']['max_wait_seconds'])
+        self.disable_reads = cfg['poll'].getboolean('disable_while_reading')
+        self.pending = None  # {'count', 'changed', 'first'}: new punches seen on the device, not read yet
+        self.user_count = None  # sizes.users when the users were last read
         self.last_full = 0.0
         self.serial = self.store.get('serial', '')
+
+    def _settled(self, count, now) -> bool:
+        """True when the new punch count has stayed the same for `quiet` seconds or was first seen `max_wait` ago."""
+        p = self.pending
+        if p is None:
+            p = self.pending = {'count': count, 'changed': now, 'first': now}
+        elif p['count'] != count:
+            p['count'], p['changed'] = count, now
+        return now - p['changed'] >= self.quiet or now - p['first'] >= self.max_wait
 
     def poll_device(self) -> int:
         """Read the device once. Returns the number of new punches stored."""
@@ -71,18 +90,35 @@ class Service:
                 self.store.put('users_sent', '')
                 self.force_full = True
             sizes = dev.sizes()
+            now = time.monotonic()
             last = int(self.store.get('records', -1))
-            due = self.force_full or time.monotonic() - self.last_full >= self.full_every
-            if sizes.records == last and not due:
+            full = (self.force_full or self.users is None or sizes.users != self.user_count
+                    or now - self.last_full >= self.full_every)
+            if sizes.records == last and not full:
+                self.pending = None
                 return 0
-            sizes, users, punches = dev.read_all()
-        self.store.set_users(self.serial, users)
-        self.users = users
+            if not full and not self._settled(sizes.records, now):
+                return 0
+            started = time.monotonic()
+            if self.disable_reads:
+                dev.disable()
+            try:
+                users = dev.users(sizes) if full else self.users
+                punches = dev.attendance(sizes, users)
+            finally:
+                if self.disable_reads:
+                    dev.enable()
+            took = time.monotonic() - started
+        if full:
+            self.store.set_users(self.serial, users)
+            self.users, self.user_count = users, sizes.users
+            self.last_full = time.monotonic()
         self.force_full = False
+        self.pending = None
         new = self.store.add_punches(self.serial, punches)
         self.store.put('records', sizes.records)
-        self.last_full = time.monotonic()
-        log.info('device %s: %d users, %d punches on device, %d new', self.serial, len(users), len(punches), new)
+        log.info('device %s: %d users, %d punches on device, %d new (%s read in %.1f s)', self.serial, len(users),
+                 len(punches), new, 'full' if full else 'punch', took)
         return new
 
     def upload(self) -> int:

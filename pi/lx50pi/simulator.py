@@ -26,6 +26,7 @@ class FakeDevice:
         self.session_id = 0
         self.authed = False
         self.enabled = True
+        self.disables = 0      # CMD_DISABLEDEVICE received (each one shows "Working" on the real device)
         self.buffer = b''
         self.enrolling = None  # (user_id, finger) after CMD_STARTENROLL
         self.freed_slots = 0   # lx50: deleted users still in the user buffer as zero records
@@ -84,6 +85,7 @@ class FakeDevice:
             return ok()
         if p.command in (P.CMD_ENABLEDEVICE, P.CMD_DISABLEDEVICE):
             self.enabled = p.command == P.CMD_ENABLEDEVICE
+            self.disables += not self.enabled
             return ok()
         if p.command == P.CMD_OPTIONS_RRQ:
             name = p.data.split(b'\x00')[0].decode()
