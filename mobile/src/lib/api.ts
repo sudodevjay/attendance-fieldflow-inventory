@@ -1,27 +1,22 @@
 /**
  * Talks to the attendance web server (web/server, /api/portal). The server address and the login token are kept on
- * the phone (SecureStore; localStorage on web, where SecureStore does not exist).
+ * the phone in the Android Keystore / iOS Keychain (react-native-keychain).
  */
-import { Platform } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
+import * as Keychain from 'react-native-keychain';
 
 const SERVER_KEY = 'zk_server';
 const TOKEN_KEY = 'zk_token';
 
 async function read(key: string): Promise<string> {
-  if (Platform.OS === 'web') {
-    try { return localStorage.getItem(key) ?? ''; } catch { return ''; }
-  }
-  return (await SecureStore.getItemAsync(key)) ?? '';
+  try {
+    const r = await Keychain.getGenericPassword({ service: key });
+    return r ? r.password : '';
+  } catch { return ''; }
 }
 
 async function write(key: string, value: string) {
-  if (Platform.OS === 'web') {
-    try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key); } catch { /* private mode */ }
-    return;
-  }
-  if (value) await SecureStore.setItemAsync(key, value);
-  else await SecureStore.deleteItemAsync(key);
+  if (value) await Keychain.setGenericPassword(key, value, { service: key });
+  else await Keychain.resetGenericPassword({ service: key });
 }
 
 /** The cloud server (Render); the login screen starts with it, another address can be typed there. */

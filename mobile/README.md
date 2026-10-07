@@ -1,4 +1,4 @@
-# Housys Attendance — mobile app (React Native / Expo)
+# Housys Attendance — mobile app (React Native CLI)
 
 The employees' app. Same server and data as the web employee portal (`/me` of `web/`): the employee logs in with
 their **AC No** and the password HR created (Employee Portal → Employee Logins in the administrator program).
@@ -11,25 +11,43 @@ their **AC No** and the password HR created (Employee Portal → Employee Logins
 | Settings | profile, change password, server, log out |
 | Home bell | unread notifications (request decisions, HR announcements); in-app only, no phone push notifications |
 
-Built with Expo SDK 57, Expo Router (`src/app`), expo-secure-store (login token), expo-image-picker (receipt photo),
-expo-web-browser (payslip PDF).
+| Check-in | only at a work site when HR turned it on: GPS inside the site's radius (no mock location, accuracy limit) + a selfie |
 
-## Run
+Plain **React Native CLI** 0.86 (no Expo), TypeScript, React Navigation (bottom tabs + native stack),
+react-native-keychain (server address + login token), react-native-image-picker (selfie, receipt, document photos),
+@react-native-community/geolocation (site check-in), @react-native-vector-icons/ionicons. Package
+`com.housys.attendance`.
+
+| Where | What |
+|---|---|
+| `index.js` → `src/App.tsx` | login gate (login → first-password → tabs), tabs and every screen |
+| `src/screens/`, `src/screens/tabs/` | the screens |
+| `src/lib/nav.ts` | `router.push('/leave?apply=1')`, `router.back()`, `useLocalSearchParams()` on top of React Navigation |
+| `src/lib/api.ts` | server calls (`/api/portal`), token in the Keychain |
+| `src/lib/siteCheckIn.ts`, `src/lib/media.ts` | GPS + selfie check-in, photo from camera / gallery |
+| `android/` | the Android project (kept in git). Permissions: internet, fine / coarse location |
+
+## Run (development)
 ```
 cd mobile
 npm install
-npx expo start          # scan the QR code with Expo Go (Android / iOS) on the same Wi-Fi as the server PC
+npx react-native start            # Metro
+npx react-native run-android      # emulator or phone with USB debugging
 ```
-On the login screen enter the **server address** = the PC running `web/server`, e.g. `192.168.1.46:4000`
-(Windows Firewall must allow inbound TCP 4000 on that PC).
+Checks: `npm run typecheck`, `npm run lint`.
 
-Checks: `npx tsc --noEmit`, `npx expo-doctor`, `npx expo export --platform android` (bundles the app).
+## Install file (APK)
+```
+cd mobile/android
+gradlew assembleRelease           # -> app/build/outputs/apk/release/app-release.apk
+```
+Copy it to `release/HousysAttendance-<version>.apk` (that folder is not in git). Before a new build raise
+`versionCode` / `versionName` in `android/app/build.gradle`; the APK is signed with `android/app/debug.keystore`
+(the same key as the earlier Expo builds, so it installs as an update over them). For the Play Store make a real
+release key first.
 
-## Install file (APK / App Store)
-Build in the Expo cloud (free account): `npx eas-cli@latest build --platform android --profile preview` gives an APK
-to install on the phones; `--platform ios` needs an Apple developer account. See https://docs.expo.dev/build/setup/.
-The server address is typed in by the employee, so one build works for any office.
+Only `https://` servers work in the release APK. Test build for a server on the PC:
+`gradlew assembleRelease -PallowHttp`, then on the emulator `adb reverse tcp:4000 tcp:4000` and server `localhost:4000`.
 
-Note: plain `http://` works in Expo Go and in development. A release build on Android blocks plain http by default:
-put the server behind https (recommended when used over the internet), or allow cleartext traffic for the LAN in the
-build configuration.
+Note: version 1.1.0 (the first CLI build) keeps the login in the Keychain, the Expo builds in SecureStore: after the
+update everyone logs in once again.
