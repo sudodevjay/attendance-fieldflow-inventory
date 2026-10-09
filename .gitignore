@@ -25,3 +25,8 @@ release/
 # Database backups (JSON, contain personal data)
 backups/
 inventory-api/node_modules/
+
+# Large installers: kept on the PC (and in the old attendancecontroller repo), not in this repo
+pi/tools/Wireshark-*.exe
+ZKTeco_Driver/ZKTime5.0.zip
+ZKTeco_Driver/ZKTime5.0/**/setup.exe
