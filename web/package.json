@@ -4,11 +4,13 @@
   "description": "Web version of the ZK Attendance Manager: React + Tailwind client, Node.js + TypeScript server, own PostgreSQL database (Supabase)",
   "scripts": {
     "install:all": "npm --prefix server install && npm --prefix client install",
+    "install:inventory": "npm --prefix ../inventory-api install",
+    "dev:inventory": "npm --prefix ../inventory-api run dev",
     "build": "npm --prefix client run build",
     "start": "npm --prefix server start",
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
-    "check": "npm --prefix server run check && npm --prefix client run check",
-    "test:e2e": "python test/e2e_api.py && python test/e2e_pi.py && python test/e2e_portal.py && python test/e2e_hr.py && python test/e2e_roles.py"
+    "check": "npm --prefix server run check && npm --prefix client run check && npm --prefix ../inventory-api run check",
+    "test:e2e": "python test/e2e_api.py && python test/e2e_pi.py && python test/e2e_portal.py && python test/e2e_hr.py && python test/e2e_roles.py && python test/e2e_inventory.py"
   }
 }

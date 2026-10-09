@@ -11,7 +11,7 @@ import { Loading, today, useLoad, Wrap } from './PortalPages';
 export const notificationsChanged = () => window.dispatchEvent(new Event('portal:notifications'));
 
 /** Where a notification's link leads. */
-const LINKS: Record<string, string> = { team: '/me/team-requests', requests: '/me/requests', leave: '/me/leave-reports' };
+const LINKS: Record<string, string> = { team: '/me/team-requests', requests: '/me/requests', leave: '/me/leave-reports', store: '/me/store' };
 
 export function BellIcon({ className = 'size-5' }: { className?: string }) {
   return (

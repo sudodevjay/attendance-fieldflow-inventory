@@ -78,6 +78,61 @@ Tables the server adds for this (created on start if missing): `EmployeeProfiles
 `Notifications`, `AuditLog`, `AdminUsers`, `WebBlobs`, the column `EmployeeRequests.Payload`, and the leave type
 `CO - Compensatory Off`; settings `Salary.*`, `Company.*`, `Payroll.OtRequiresApproval`, `Leave.CompOffExpiryDays`.
 
+## Inventory (separate service)
+Backend `../inventory-api` (own Node service, **own PostgreSQL database**), screens `client/src/modules/inventory` (the same
+app). The app has one address and one login: this server logs the user in, checks the role (**StoreKeeper** = inventory
+only) and the HOD's departments, writes the audit log and forwards `/api/inventory/*` and `/api/portal/store/*` to the
+inventory service (`server/src/services/inventoryGateway.ts`). The two only talk over HTTP with a shared `SERVICE_TOKEN`:
+
+| Direction | What |
+|---|---|
+| attendance → inventory | forwarded requests with the user's identity (`X-User`, `X-Role`, `X-Scope-Departments`, `X-Employee-Id`, `X-Directory-Version`) |
+| inventory → attendance | `GET /api/internal/directory` (employees, departments, work sites, company name) — kept as a read-only copy (`Dir*` tables), refreshed when attendance's data changed; `POST /api/internal/notifications` |
+
+Run locally (three terminals; any shared secret):
+```
+set SERVICE_TOKEN=dev-secret
+cd inventory-api && set DATABASE_URL=postgresql://.../zkinventory && npm run dev      (port 4100)
+cd web && npm run dev:server                                                          (port 4000, INVENTORY_URL default http://localhost:4100)
+cd web && npm run dev:client
+```
+Deployment, moving existing inventory data, backup: [DEPLOY.md](DEPLOY.md) → *2b. Inventory service*.
+
+Items and stock per store, purchase orders → goods receipts, requisitions → approval → issues → returns, transfers / stock
+counts / adjustments, low-stock re-order and overdue alerts, reports.
+
+| Work sites | |
+|---|---|
+| Site | the **Work Sites** of site attendance (Sites screen); no separate list. A site needs to be active for new requisitions / issues |
+| Issue / requisition **for a site** | choose *For work site*. Everything issued for a site is **at the site** until it is marked **Installed** (Issue / Return → *Installed*, or the employee in the portal / app: Store → *Material at sites*) or comes back with **Return** (left-overs go back into stock) |
+| Material at sites | Issue / Return → *Material at sites*: per site and item issued, installed, returned, still at site, values |
+| Reports | *Site-wise Material*, *Site Material Register* (who took / installed / returned what, when); *Employee-wise Issues* shows the site |
+| Employee List → **Store Items** | everything the store gave the employee: what they hold, what is at a site, installed, returned (roles that may open the inventory) |
+
+A deleted or inactive site keeps its history (the name is stored on the documents).
+
+| Item types, tags, bins | |
+|---|---|
+| Tracking | **By quantity**: consumables (jumper wires, components; used up when issued without a site) or **returnable** (pens, tools, wires to give back). **By serial**: boom barriers, turnstiles, tripods, laptops — every unit is a row in Units & Tags with its serial number and RFID / QR tag; its stock is always its units in that store |
+| Units & Tags | where each unit is (store / with whom / installed at which site), history of every unit, *Tag units* (scan the stuck labels one after the other), QR labels to print. New units come with goods receipts / opening stock (numbered `<item code>-0001`, or the serials sent with the receipt); an item switched to serial turns its stock into units; a serial item cannot go back to quantity |
+| Scanning | USB / Bluetooth QR-barcode scanners and desk RFID readers type the code + Enter into any scan box; on a phone the camera button reads QR codes. A code is looked up as: unit tag / serial → item barcode / code → bin `BIN-<AC No>` → employee AC No / card number |
+| Issue | scan the employee card / bin, then unit tags (those exact units) or item barcodes (+1 each). Return / Installed: tick the units, or enter a quantity (the oldest go) |
+| Scan Station | **Give back**: scan a unit's tag (returns it from whoever has it), or the bin / card and then item barcodes with a quantity. **Find**: what is this code, where is it |
+| Employee Bins | every employee's bin: open items, limit, taken / installed / returned, every line with its units; also Employee List → Store Items and the portal (*My bin*) |
+| Bin limit | Automation settings → *Bin limit* for everybody, own limit per employee (Employee Bins → Bin limit); 0 = none. Open items = serial units + open lines of returnables / site material (10 pens on one slip = 1). An issue or request that does not fit is refused until the bin is cleared (return / installed) |
+| Reports | *Employee Bins*, *Serial Units* (Excel / PDF) |
+
+| Locations (rack / row / column) | |
+|---|---|
+| Rule | every quantity in a store lies on a location (`InvLocStock` adds up to the store's stock; units in a store have their location; every movement records its location) |
+| Locations screen | *Add rack*: name + rows × columns makes `R03-1-1 … R03-4-5`; grid per rack with what is on each position; QR label `LOC-<Id>` per position (print), optional RFID tag; switch off / delete only when empty |
+| RECEIVING | every store's inward counter: goods booked in without a location (receipts, returns, opening stock, transfers) land there; the Locations screen warns until they are put away |
+| Put away / move | scan the rack label, then unit tags (they move from wherever they lie) or item barcodes with a quantity (from RECEIVING or the chosen location) |
+| Issue / transfer / adjust | *Take from location* (or scan the rack label); empty = the system picks (RECEIVING first, then the fullest position) and the issue slip shows *Picked from* |
+| Count | per location: the book quantity of that position is compared |
+| Where is it | item card *Where it lies*; scanning an item / unit on the Locations screen; unit history shows each location; report *Stock by Location* |
+| Upgrade | stock from before locations is put on RECEIVING at the first start |
+
 ## Devices
 The LX50 is read by the **Raspberry Pi** (`pi/`, see `pi/README.md`); the Pi talks to this server:
 punches and the user list come in, and Upload / Del(Device) / Download attendance logs go out as commands the Pi runs.

@@ -14,6 +14,7 @@ import { initWifiPassword } from './services/wifi.service';
 async function main() {
   await getPool();
   await ensureWebTables();
+  // The inventory is a separate service (inventory-api/, INVENTORY_URL) with its own database.
   // In the cloud nobody opens the program "on the server PC": ADMIN_PASSWORD sets the first Supervisor password.
   if (process.env.ADMIN_PASSWORD && !(await hasPassword())) {
     await setInitialPassword(process.env.ADMIN_PASSWORD);

@@ -23,6 +23,7 @@ async function main() {
   const pg = new Client(poolOptions(config.connectionString));
   await pg.connect();
   await pg.query('BEGIN');
+  // Inventory tables in an old backup belong to the inventory service now (inventory-api/scripts/restore-backup.ts).
   const tables = TABLES.filter((t) => Array.isArray(backup.tables?.[t]));
   await pg.query(`TRUNCATE ${tables.join(', ')} RESTART IDENTITY CASCADE`);
   for (const t of tables) {

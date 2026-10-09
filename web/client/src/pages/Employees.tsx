@@ -10,6 +10,7 @@ import { DataTable } from '../DataTable';
 import { DeptTree, type Dept } from '../DeptTree';
 import { Button, Check, Field, FINGER_NAMES, Icon, Input, Note, Page, Select, Tabs } from '../ui';
 import { DocumentsTab, EMPTY_PROFILE, HrProfileTab, SalaryTab, type Profile, type SalaryRow } from './EmployeeHr';
+import { EmployeeItemsTab } from '../modules/inventory/EmployeeItemsTab';
 
 interface Row { Id: number; EnrollNo: string; BadgeNo: string | null; Name: string; Gender: string | null; Designation: string | null; Phone: string | null; Department: string | null; IsActive: boolean }
 
@@ -50,7 +51,7 @@ export function Employees() {
   const [rows, setRows] = useState<Row[]>([]);
   const [sel, setSel] = useState<number[]>([]);
   const [form, setForm] = useState<Form>(EMPTY);
-  const [tab, setTab] = useState<'basic' | 'addition' | 'ac' | 'hr' | 'salary' | 'docs'>('basic');
+  const [tab, setTab] = useState<'basic' | 'addition' | 'ac' | 'hr' | 'salary' | 'docs' | 'store'>('basic');
   const [finger, setFinger] = useState(6);
   const [busy, setBusy] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -223,7 +224,8 @@ export function Employees() {
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="px-3 pt-2">
           <Tabs tabs={[{ key: 'basic', label: 'Basic Information' }, { key: 'addition', label: 'Addition' }, { key: 'ac', label: 'AC Options' },
-            { key: 'hr', label: 'HR Profile' }, { key: 'salary', label: 'Salary Structure' }, { key: 'docs', label: 'Documents' }]} value={tab} onChange={setTab} />
+            { key: 'hr', label: 'HR Profile' }, { key: 'salary', label: 'Salary Structure' }, { key: 'docs', label: 'Documents' },
+            ...(app.can('inventory') ? [{ key: 'store' as const, label: 'Store Items' }] : [])]} value={tab} onChange={setTab} />
         </div>
         <div className="p-4">
           {tab === 'basic' && (
@@ -302,6 +304,7 @@ export function Employees() {
           {tab === 'hr' && <HrProfileTab employeeId={form.Id} value={form.Profile} onChange={(p) => set('Profile', p)} />}
           {tab === 'salary' && <SalaryTab rows={form.Salary} salary={form.MonthlySalary} onChange={(r) => set('Salary', r)} />}
           {tab === 'docs' && <DocumentsTab employeeId={form.Id} />}
+          {tab === 'store' && <EmployeeItemsTab employeeId={form.Id} />}
 
           {tab === 'ac' && (
             <div className="max-w-md space-y-3">

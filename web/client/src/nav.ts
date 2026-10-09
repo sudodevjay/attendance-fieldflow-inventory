@@ -1,3 +1,5 @@
+import { INVENTORY_NAV } from './modules/inventory/nav';
+
 /**
  * Sidebar = the web HR screens (HRMS: dashboard, roster, payroll setup, notifications, users, audit log) and everything the
  * Windows program has in its header (toolbar + menu bar: Data, Attendance, Search/Print, Maintenance/Options, Device
@@ -18,11 +20,13 @@ export interface NavItem {
   /** hidden without write access to the area */
   write?: boolean;
 }
-export interface NavGroup { title: string; items: NavItem[] }
+/** `area`: the whole group is hidden when the role cannot open this area (e.g. a StoreKeeper sees no attendance groups). */
+export interface NavGroup { title: string; items: NavItem[]; area?: string }
 
 export const NAV: NavGroup[] = [
   {
     title: 'HRMS',
+    area: 'dashboard',
     items: [
       { label: 'Dashboard', icon: 'home', color: '#16a34a', to: '/' },
       { label: 'Employee Requests / Approvals', icon: 'check', color: '#16a34a', to: '/portal-admin' },
@@ -34,8 +38,10 @@ export const NAV: NavGroup[] = [
       { label: 'Audit Log', icon: 'search', color: '#696969', to: '/audit', area: 'audit' },
     ],
   },
+  INVENTORY_NAV,
   {
     title: 'Toolbar',
+    area: 'attendance',
     items: [
       { label: 'Machine List', icon: 'device', color: '#334155', to: '/machines', area: 'devices' },
       { label: 'Employees', icon: 'people', color: '#d2691e', to: '/employees' },
@@ -50,6 +56,7 @@ export const NAV: NavGroup[] = [
   },
   {
     title: 'Data',
+    area: 'attendance',
     items: [
       { label: 'Import Attendance Checking Data', icon: 'import', color: '#16a34a', action: 'import', area: 'attendance', write: true },
       { label: 'Export Attendance Checking Data', icon: 'export', color: '#ea580c', to: '/aclog' },
@@ -60,6 +67,7 @@ export const NAV: NavGroup[] = [
   },
   {
     title: 'Attendance',
+    area: 'attendance',
     items: [
       { label: 'Leave / Holidays', icon: 'flag', color: '#7e22ce', to: '/leave' },
       { label: 'Append Manual Record (AC Log)', icon: 'clock', color: '#2563eb', action: 'manualPunch', area: 'attendance', write: true },
@@ -71,6 +79,7 @@ export const NAV: NavGroup[] = [
   },
   {
     title: 'Search/Print',
+    area: 'attendance',
     items: [
       { label: 'Attendance Records (AC Log)', icon: 'search', color: '#2563eb', to: '/aclog' },
       { label: 'Attendance Reports', icon: 'report', color: '#2563eb', to: '/reports' },
@@ -78,6 +87,7 @@ export const NAV: NavGroup[] = [
   },
   {
     title: 'Maintenance/Options',
+    area: 'attendance',
     items: [
       { label: 'Department List', icon: 'home', color: '#2e8b57', to: '/departments' },
       { label: 'Administrator', icon: 'lock', color: '#b8860b', action: 'admin', area: 'system' },
@@ -94,6 +104,7 @@ export const NAV: NavGroup[] = [
   },
   {
     title: 'Device management',
+    area: 'devices',
     items: [
       { label: 'Add Device', icon: 'add', color: '#2563eb', action: 'addDevice', area: 'devices' },
       { label: 'Edit Device', icon: 'edit', color: '#2563eb', action: 'editDevice', area: 'devices' },
@@ -111,6 +122,7 @@ export const NAV: NavGroup[] = [
   },
   {
     title: 'Machine',
+    area: 'devices',
     items: [
       { label: 'Download attendance logs', icon: 'download', color: '#16a34a', action: 'downloadLogs', area: 'devices' },
       { label: 'Download user info and Fp', icon: 'download', color: '#2563eb', action: 'downloadUsers', area: 'devices' },
@@ -121,6 +133,7 @@ export const NAV: NavGroup[] = [
   },
   {
     title: 'Employee Schedule',
+    area: 'attendance',
     items: [
       { label: 'Maintenance Timetables', icon: 'timer', color: '#a52a2a', to: '/shifts' },
       { label: 'Shifts Management', icon: 'calendar', color: '#a52a2a', to: '/shifts' },

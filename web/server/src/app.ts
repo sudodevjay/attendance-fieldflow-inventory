@@ -5,13 +5,14 @@ import express from 'express';
 import { ROOT } from './config';
 import { errorHandler } from './middlewares/error.middleware';
 import { api } from './routes';
+import { trackChanges } from './services/inventoryGateway';
 
 export const app = express();
 app.disable('x-powered-by');
 // Behind the Render proxy: req.ip is the caller's address (X-Forwarded-For), not the proxy's.
 if (process.env.RENDER || process.env.TRUST_PROXY) app.set('trust proxy', 1);
 app.use(express.json({ limit: '10mb' }));
-app.use('/api', api);
+app.use('/api', trackChanges, api);
 
 const dist = path.resolve(ROOT, '..', 'client', 'dist');
 if (fs.existsSync(dist)) {

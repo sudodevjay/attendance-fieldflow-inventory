@@ -1,8 +1,8 @@
 import { StrictMode, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { api, getToken, setToken, setUnauthorizedHandler } from './api';
-import { AppProvider, type Permissions } from './app';
+import { AppProvider, useApp, type Permissions } from './app';
 import './index.css';
 import { Layout } from './Layout';
 import { AcLog } from './pages/AcLog';
@@ -20,9 +20,16 @@ import { Settings } from './pages/Settings';
 import { Shifts } from './pages/Shifts';
 import { Sites } from './pages/Sites';
 import { PortalAdmin } from './pages/PortalAdmin';
+import { Inventory } from './modules/inventory/Inventory';
 import { PortalRoot } from './portal/PortalApp';
 import { WifiSetupRoot } from './wifi/WifiSetup';
 import { Button, Icon, Input } from './ui';
+
+/** Start screen: the attendance dashboard, or the inventory for roles that only have the inventory (StoreKeeper). */
+function Home() {
+  const { can } = useApp();
+  return can('dashboard') || !can('inventory') ? <Dashboard /> : <Navigate to="/inventory" replace />;
+}
 
 function Login({ onDone }: { onDone: (user: string) => void }) {
   const [user, setUser] = useState('Supervisor');
@@ -111,7 +118,7 @@ function Root() {
       <BrowserRouter>
         <Routes>
           <Route element={<Layout />}>
-            <Route index element={<Dashboard />} />
+            <Route index element={<Home />} />
             <Route path="machines" element={<MachineList />} />
             <Route path="roster" element={<Roster />} />
             <Route path="payroll" element={<PayrollSetup />} />
@@ -128,7 +135,8 @@ function Root() {
             <Route path="settings" element={<Settings />} />
             <Route path="portal-admin" element={<PortalAdmin />} />
             <Route path="sites" element={<Sites />} />
-            <Route path="*" element={<Dashboard />} />
+            <Route path="inventory/*" element={<Inventory />} />
+            <Route path="*" element={<Home />} />
           </Route>
         </Routes>
       </BrowserRouter>

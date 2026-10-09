@@ -29,6 +29,7 @@ export function Layout() {
     return () => clearInterval(t);
   }, []);
   const loadDevices = useCallback(() => {
+    if (!app.can('devices')) return;
     api.get('/devices').then((r) => setDevices({ total: r.devices.length, online: r.connected })).catch(() => {});
   }, []);
   useEffect(() => {
@@ -135,12 +136,12 @@ export function Layout() {
       <div className="mb-1.5 flex items-center gap-2 rounded-md bg-white/10 px-2 py-2 text-white">
         <Icon name="finger" className="size-6 text-amber-300" />
         <div className="leading-tight">
-          <div className="text-[13px] font-semibold">Attendance</div>
-          <div className="text-[11px] text-white/70">Management Program</div>
+          <div className="text-[13px] font-semibold">{app.can('attendance') ? 'Attendance' : 'Inventory'}</div>
+          <div className="text-[11px] text-white/70">{app.can('attendance') && app.can('inventory') ? '& Inventory' : 'Management Program'}</div>
         </div>
       </div>
       <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5 scroll-thin">
-        {NAV.map((g) => {
+        {NAV.filter((g) => !g.area || app.can(g.area)).map((g) => {
           const shut = collapsed.includes(g.title);
           return (
             <section key={g.title} className="overflow-hidden rounded-md bg-white shadow-sm">
@@ -182,10 +183,10 @@ export function Layout() {
         <Icon name="finger" className="size-4 text-amber-300" />
         <span className="flex-1 truncate text-[13px] font-medium">Housys</span>
         <span className="hidden truncate text-xs text-white/70 sm:inline">{app.company}</span>
-        <NavLink to="/notifications" className="relative rounded p-1 hover:bg-white/15" aria-label={`Notifications, ${unread} unread`} title="Notifications">
+        {can('portal') && <NavLink to="/notifications" className="relative rounded p-1 hover:bg-white/15" aria-label={`Notifications, ${unread} unread`} title="Notifications">
           <Icon name="bell" className="size-4" />
           {unread > 0 && <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-amber-400 px-1 text-center text-[10px] font-bold leading-4 text-brand-900">{unread > 99 ? '99+' : unread}</span>}
-        </NavLink>
+        </NavLink>}
         <button type="button" onClick={() => act('exit')} className="flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-white/15">
           <Icon name="logout" className="size-3.5" />Exit
         </button>
@@ -207,7 +208,7 @@ export function Layout() {
       <footer className="flex items-center border-t border-slate-300 bg-gradient-to-b from-slate-100 to-slate-200 text-xs text-slate-700">
         <span className="w-56 truncate px-3 py-1">{app.user}{app.role !== 'Admin' && <span className="ml-1 text-slate-500">({app.role})</span>}</span>
         <span className="w-32 border-l border-slate-300 px-3 py-1">{clock.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-        <span className="flex-1 truncate border-l border-slate-300 px-3 py-1">Devices: {devices.total}   Online: {devices.online}</span>
+        <span className="flex-1 truncate border-l border-slate-300 px-3 py-1">{can('devices') ? `Devices: ${devices.total}   Online: ${devices.online}` : ''}</span>
       </footer>
 
       {open?.kind === 'device' && <DeviceDialog device={open.device ?? null} onClose={close} onSaved={() => { app.dataChanged(); loadDevices(); }} />}

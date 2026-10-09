@@ -9,18 +9,24 @@
  *   HR          employees, holidays, shifts, attendance, leave, portal requests, reports, announcements; reads the rest
  *   Payroll     salary structure / rules and reports; reads the rest
  *   Viewer      reads everything except users, audit log and system
+ *   StoreKeeper the inventory only (items, stock, purchase, requisitions / issues, its reports); no attendance screens
+ * Inventory (the module in modules/inventory): SuperAdmin / Admin / StoreKeeper manage it; an HOD reads it for their
+ * departments and approves their requisitions; Viewer reads it; HR and Payroll do not see it (attendance only).
  * Team leads and managers are employees: they work in the employee portal (/me) and the app, not here.
  */
-export const ROLES = ['SuperAdmin', 'Admin', 'HOD', 'HR', 'Payroll', 'Viewer'] as const;
+export const ROLES = ['SuperAdmin', 'Admin', 'HOD', 'HR', 'Payroll', 'Viewer', 'StoreKeeper'] as const;
 export type Role = (typeof ROLES)[number];
 
 export type Area =
   | 'dashboard' | 'employees' | 'attendance' | 'leave' | 'reports' | 'payroll' | 'devices' | 'portal' | 'settings' | 'users' | 'audit'
-  | 'system';
+  | 'system' | 'inventory';
 
-const ALL: Area[] = ['dashboard', 'employees', 'attendance', 'leave', 'reports', 'payroll', 'devices', 'portal', 'settings', 'users', 'audit', 'system'];
+const ALL: Area[] = ['dashboard', 'employees', 'attendance', 'leave', 'reports', 'payroll', 'devices', 'portal', 'settings', 'users', 'audit', 'system', 'inventory'];
+/** Everything but the inventory. */
+const ATTENDANCE: Area[] = ALL.filter((a) => a !== 'inventory');
 
 const AREAS: [RegExp, Area][] = [
+  [/^\/inventory/, 'inventory'],
   [/^\/dashboard/, 'dashboard'],
   [/^\/(departments|employees|documents)/, 'employees'],
   [/^\/(shifts|schedule|roster|logs|sites)/, 'attendance'],
@@ -37,7 +43,8 @@ const AREAS: [RegExp, Area][] = [
 ];
 
 /** What an HOD may change: leave of their department and the decisions on its requests (not holidays, types, settings). */
-const HOD_WRITES = [/^\/leave\/(entries|entries\/delete|decide)$/, /^\/portal-admin\/requests\/decide$/, /^\/notifications\/read$/];
+const HOD_WRITES = [/^\/leave\/(entries|entries\/delete|decide)$/, /^\/portal-admin\/requests\/decide$/, /^\/notifications\/read$/,
+  /^\/inventory\/requisitions\/\d+\/(decide|cancel)$/];
 
 /** POSTs that only read data. */
 const READ_POSTS = [/^\/employees\/(photos|export)$/, /^\/notifications\/read$/, /^\/logs\/export$/];
@@ -49,14 +56,16 @@ const WRITE: Record<Role, Area[]> = {
   HR: ['employees', 'attendance', 'leave', 'portal', 'reports', 'dashboard'],
   Payroll: ['payroll', 'reports', 'dashboard'],
   Viewer: [],
+  StoreKeeper: ['inventory'],
 };
 const NO_READ: Record<Role, Area[]> = {
   SuperAdmin: [],
   Admin: ['users', 'audit', 'system'],
   HOD: ['payroll', 'devices', 'users', 'audit', 'system'],
-  HR: ['users', 'system'],
-  Payroll: ['users', 'system'],
+  HR: ['users', 'system', 'inventory'],
+  Payroll: ['users', 'system', 'inventory'],
   Viewer: ['users', 'audit', 'system'],
+  StoreKeeper: ATTENDANCE,
 };
 
 /** Reports with salaries: only for roles that may read payroll. */
@@ -78,7 +87,7 @@ export const canRead = (role: Role, area: Area) => !NO_READ[role].includes(area)
 /** Areas the role may open (read) and change (write): the client hides the rest. */
 export const permissions = (role: Role) => ({
   read: ALL.filter((a) => !NO_READ[role].includes(a)),
-  write: role === 'HOD' ? ['leave', 'portal'] as Area[] : ALL.filter((a) => !NO_READ[role].includes(a) && WRITE[role].includes(a)),
+  write: role === 'HOD' ? ['leave', 'portal', 'inventory'] as Area[] : ALL.filter((a) => !NO_READ[role].includes(a) && WRITE[role].includes(a)),
   scoped: role === 'HOD',
 });
 

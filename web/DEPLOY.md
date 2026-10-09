@@ -39,6 +39,39 @@ npx tsx scripts/copy-from-sqlserver.ts
 With the Blueprint (GitHub connected) every push deploys again. A service created from the public repo URL (as the
 live one) does not get the pushes: Render → the service → **Manual Deploy → Deploy latest commit**. Logs: the service → Logs.
 
+## 2b. Inventory service: its own Render service and its own Supabase database
+The inventory (`inventory-api/`) is a separate backend with a separate database. The browser / app only talks to
+`zk-attendance`, which checks the login and forwards `/api/inventory` and `/api/portal/store`; the two services talk only
+over HTTP with a shared secret `SERVICE_TOKEN`.
+
+1. **Database**: supabase.com → **New project** (e.g. `zk-inventory`, region Southeast Asia (Singapore), own password) →
+   Connect → **Session pooler** URI (as in step 1). This is the inventory's `DATABASE_URL`, not the attendance one.
+2. **Secret**: make one long random text, e.g. in PowerShell
+   `[Convert]::ToBase64String((1..32 | % { Get-Random -Max 256 }) -as [byte[]])`. It is `SERVICE_TOKEN` on both services.
+3. **Service**: Render → **New → Web Service** → the same repository and branch → Name `zk-inventory`, Region Singapore,
+   **Root Directory** `inventory-api`, Build `npm install`, Start `npm start`, Health check path `/health`, plan Free.
+   Environment: `DATABASE_URL` (step 1), `SERVICE_TOKEN` (step 2), `ATTENDANCE_URL` = `https://zk-attendance.onrender.com`,
+   `TZ` = `Asia/Kolkata`, `NODE_VERSION` = `22`. Create → it shows `https://zk-inventory.onrender.com` (or similar).
+   (With the Blueprint, `render.yaml` already describes `zk-inventory`; only the secrets are asked.)
+4. **Attendance service** (`zk-attendance`) → Environment → add `SERVICE_TOKEN` (the same text) and `INVENTORY_URL` =
+   the inventory service's address → Save (it restarts).
+5. **Data that was already in the inventory** (when the inventory still lived in the attendance database): on a PC,
+   ```
+   cd inventory-api
+   npm install
+   set SOURCE_DATABASE_URL=<attendance DATABASE_URL>
+   set DATABASE_URL=<inventory DATABASE_URL>
+   set SERVICE_TOKEN=x
+   npx tsx scripts/migrate-from-attendance.ts --yes
+   ```
+   It only reads the attendance database. Then restart `zk-inventory` (Manual Deploy) and check the inventory screens.
+   The old `Inv*` tables in the attendance database are no longer used; drop them later in the Supabase SQL editor if you like.
+6. **Backup**: the attendance backup does not contain the inventory any more. Inventory → Automation settings →
+   *Backup inventory database* (SuperAdmin); restore with `npx tsx scripts/restore-backup.ts <file> --yes` in `inventory-api`.
+
+Free plan: `zk-inventory` sleeps after 15 minutes without use; the first inventory screen after that waits up to a minute
+(the app says so: try again). The attendance part is not affected.
+
 ## 3. Raspberry Pi on the office Wi-Fi
 1. Wi-Fi (once, on the Pi): `sudo nmcli dev wifi connect "<office Wi-Fi>" password "<password>"` — it reconnects by itself
    after a reboot. Check: `curl -I https://zk-attendance.onrender.com`.

@@ -5,6 +5,7 @@ import { AppProvider, useApp } from '../app';
 import { Button, Icon, Input } from '../ui';
 import { papi, ptoken, setPortalLogoutHandler, setPtoken } from './papi';
 import { BellIcon, CompOff, Documents, Notifications } from './HrPages';
+import { StorePortal } from '../modules/inventory/portal';
 import {
   ApplyLeave, AttendanceCalendar, Holidays, Home, LeaveReports, Loans, MyRequests, Payslips, Profile, Reimbursement, Tax, TeamRequests, TeamStats, YearlyReport,
 } from './PortalPages';
@@ -107,6 +108,7 @@ const NAV: Group[] = [
     ],
   },
   { label: 'Leave Management', icon: 'flag', items: [{ label: 'Apply Leave', to: '/me/apply-leave' }, { label: 'See Holidays', to: '/me/holidays' }, { label: 'Leave Reports', to: '/me/leave-reports' }] },
+  { label: 'Store (material request)', icon: 'table', to: '/me/store' },
   { label: 'My Documents', icon: 'folder', to: '/me/documents' },
   { label: 'Notifications', icon: 'info', to: '/me/notifications' },
 ];
@@ -116,6 +118,7 @@ const TITLES: Record<string, string> = {
   '/me/payslips': 'Payslips Download', '/me/yearly': 'Yearly Report', '/me/reimbursement': 'Reimbursement', '/me/tax': 'Tax', '/me/loans': 'Loans & Advances',
   '/me/apply-leave': 'Apply Leave', '/me/holidays': 'Holidays', '/me/leave-reports': 'Leave Reports', '/me/profile': 'My Profile',
   '/me/comp-off': 'Comp-off', '/me/documents': 'My Documents', '/me/notifications': 'Notifications',
+  '/me/store': 'Store — Material Request',
 };
 
 /** Unread notifications, polled every minute and after they are marked read. */
@@ -248,6 +251,7 @@ function Shell() {
             <Route path="/me/comp-off" element={<CompOff />} />
             <Route path="/me/documents" element={<Documents />} />
             <Route path="/me/notifications" element={<Notifications />} />
+            <Route path="/me/store" element={<StorePortal />} />
             <Route path="*" element={<Home />} />
           </Routes>
         </main>

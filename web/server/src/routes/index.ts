@@ -1,9 +1,11 @@
 /** All of /api. Public first (admin login, Raspberry Pi, employee portal), then everything behind the administrator login. */
 import { Router } from 'express';
 import { me } from '../controllers/hr.controller';
-import { auditTrail, authorize, requireAdmin, withScope } from '../middlewares/auth.middleware';
+import { one } from '../config/db';
+import { auditTrail, authorize, requireAdmin, requireEmployee, withScope } from '../middlewares/auth.middleware';
 import { portalCors } from '../middlewares/cors.middleware';
 import { notFound } from '../middlewares/error.middleware';
+import { forward } from '../services/inventoryGateway';
 import { authRoutes } from './auth.routes';
 import { departmentRoutes } from './department.routes';
 import { deviceRoutes } from './device.routes';
@@ -12,6 +14,7 @@ import {
   auditRoutes, dashboardRoutes, documentRoutes, employeeHrRoutes, leaveHrRoutes, notificationRoutes, payrollRoutes, rosterRoutes,
   settingsHrRoutes, userRoutes,
 } from './hr.routes';
+import { internalRoutes } from './internal.routes';
 import { leaveRoutes } from './leave.routes';
 import { piRoutes } from './pi.routes';
 import { portalRoutes } from './portal.routes';
@@ -25,10 +28,20 @@ import { wifiSetupRoutes } from './wifi.routes';
 
 export const api = Router();
 
+/** "Employee 961 Name" for the audit log of the employees' store pages. */
+async function employeeName(id: number | undefined) {
+  const e = id ? await one('SELECT EnrollNo, Name FROM Employees WHERE Id = @id', { id }) : null;
+  return e ? `Employee ${e.EnrollNo} ${e.Name}` : 'Employee';
+}
+
 // ---- public (own authentication); administrator logins are in the audit log, failed ones too
 api.use('/auth/login', auditTrail((req) => String(req.body?.user || 'Supervisor'), () => null, true));
 api.use('/auth', authRoutes);
 api.use('/lx50', piRoutes);
+// Other services of the app (inventory) calling this one: shared service token.
+api.use('/internal', internalRoutes);
+// Employees' store pages: the inventory service, as the logged-in employee (before /portal, which would stop at its 404).
+api.use('/portal/store', portalCors, requireEmployee, auditTrail((req) => employeeName(req.employeeId), () => 'Employee'), forward('employee'));
 api.use('/portal', portalCors, portalRoutes);
 api.use('/wifisetup', wifiSetupRoutes);
 
@@ -59,4 +72,6 @@ api.use('/portal-admin', portalAdminRoutes);
 api.use('/notifications', notificationRoutes);
 api.use('/users', userRoutes);
 api.use('/audit', auditRoutes);
+// Inventory: its own service and database; this server checked the login, the role and the HOD's scope and audits it.
+api.use('/inventory', forward('admin'));
 api.use(notFound);

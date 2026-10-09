@@ -1,5 +1,6 @@
-# Render blueprint: the web version (React app + Node API in one service) on the free plan.
-# The database is Supabase PostgreSQL (free); put its Session pooler URL in DATABASE_URL. See web/DEPLOY.md.
+# Render blueprint, free plan: two services with their own databases (Supabase PostgreSQL, free), see web/DEPLOY.md.
+#   zk-attendance  React app + attendance API; the one address of the app: it logs users in and forwards the inventory
+#   zk-inventory   inventory API (inventory-api/), own database; only zk-attendance calls it (SERVICE_TOKEN)
 services:
   - type: web
     name: zk-attendance
@@ -26,4 +27,32 @@ services:
         sync: false
       # Password of the /wifisetup page (the Pi's Wi-Fi), only used while none is set.
       - key: WIFI_SETUP_PASSWORD
+        sync: false
+      # The inventory service and the secret both services share (any long random text, the same on zk-inventory).
+      - key: INVENTORY_URL
+        value: https://zk-inventory.onrender.com
+      - key: SERVICE_TOKEN
+        sync: false
+
+  - type: web
+    name: zk-inventory
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: inventory-api
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TZ
+        value: Asia/Kolkata
+      # The inventory's OWN Supabase project (Session pooler URL), not the attendance database.
+      - key: DATABASE_URL
+        sync: false
+      - key: ATTENDANCE_URL
+        value: https://zk-attendance.onrender.com
+      - key: SERVICE_TOKEN
         sync: false
