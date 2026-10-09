@@ -1,9 +1,10 @@
 # Render blueprint, free plan: two services with their own databases (Supabase PostgreSQL, free), see web/DEPLOY.md.
-#   zk-attendance  React app + attendance API; the one address of the app: it logs users in and forwards the inventory
-#   zk-inventory   inventory API (inventory-api/), own database; only zk-attendance calls it (SERVICE_TOKEN)
+#   zk-suite            React app + attendance API; the one address of the app: it logs users in and forwards the inventory
+#   zk-suite-inventory  inventory API (inventory-api/), own database; only zk-suite calls it (SERVICE_TOKEN)
+# The names differ from the live zk-attendance service (other repository), so both can run side by side.
 services:
   - type: web
-    name: zk-attendance
+    name: zk-suite
     runtime: node
     plan: free
     # Same region as the Supabase project (Southeast Asia, Singapore): every page runs many small queries.
@@ -28,14 +29,17 @@ services:
       # Password of the /wifisetup page (the Pi's Wi-Fi), only used while none is set.
       - key: WIFI_SETUP_PASSWORD
         sync: false
-      # The inventory service and the secret both services share (any long random text, the same on zk-inventory).
+      # The inventory service (its address as Render shows it) and the secret both services share (made by Render).
       - key: INVENTORY_URL
-        value: https://zk-inventory.onrender.com
+        value: https://zk-suite-inventory.onrender.com
       - key: SERVICE_TOKEN
-        sync: false
+        fromService:
+          type: web
+          name: zk-suite-inventory
+          envVarKey: SERVICE_TOKEN
 
   - type: web
-    name: zk-inventory
+    name: zk-suite-inventory
     runtime: node
     plan: free
     region: singapore
@@ -53,6 +57,6 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: ATTENDANCE_URL
-        value: https://zk-attendance.onrender.com
+        value: https://zk-suite.onrender.com
       - key: SERVICE_TOKEN
-        sync: false
+        generateValue: true

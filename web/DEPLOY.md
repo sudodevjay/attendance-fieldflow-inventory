@@ -39,6 +39,18 @@ npx tsx scripts/copy-from-sqlserver.ts
 With the Blueprint (GitHub connected) every push deploys again. A service created from the public repo URL (as the
 live one) does not get the pushes: Render → the service → **Manual Deploy → Deploy latest commit**. Logs: the service → Logs.
 
+## 2a. This repository (attendance + inventory) with the Blueprint
+`render.yaml` here describes `zk-suite` (the app) and `zk-suite-inventory`; the live `zk-attendance` (other repository)
+is not touched. Render makes the shared `SERVICE_TOKEN` itself and fills in both addresses.
+1. Supabase → **New project** `zk-inventory` (Singapore) → Connect → **Session pooler** URI (inventory database).
+2. Render → **New → Blueprint** → repository `attendance-fieldflow-inventory`, branch `main` → it asks for:
+   - `zk-suite` `DATABASE_URL`: the attendance database (the live one shows the real employees: the attendance server
+     has no background jobs and no schema change against the live one, so both can use it; or a new project to test)
+   - `zk-suite` `ADMIN_PASSWORD`: only used while no administrator password is set; `WIFI_SETUP_PASSWORD` may stay empty
+   - `zk-suite-inventory` `DATABASE_URL`: the URI from step 1
+3. **Apply** (~5 minutes) → `https://zk-suite.onrender.com`. If Render shows other addresses (name taken), correct
+   `INVENTORY_URL` on `zk-suite` and `ATTENDANCE_URL` on `zk-suite-inventory`.
+
 ## 2b. Inventory service: its own Render service and its own Supabase database
 The inventory (`inventory-api/`) is a separate backend with a separate database. The browser / app only talks to
 `zk-attendance`, which checks the login and forwards `/api/inventory` and `/api/portal/store`; the two services talk only
