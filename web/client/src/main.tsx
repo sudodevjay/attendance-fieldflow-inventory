@@ -25,7 +25,7 @@ import { PortalRoot } from './portal/PortalApp';
 import { WifiSetupRoot } from './wifi/WifiSetup';
 import { Button, Icon, Input } from './ui';
 
-/** Start screen: the attendance dashboard, or the inventory for roles that only have the inventory (StoreKeeper). */
+/** Start screen: the attendance dashboard, or the inventory for roles that only have the inventory (InventoryHead, StoreKeeper). */
 function Home() {
   const { can } = useApp();
   return can('dashboard') || !can('inventory') ? <Dashboard /> : <Navigate to="/inventory" replace />;

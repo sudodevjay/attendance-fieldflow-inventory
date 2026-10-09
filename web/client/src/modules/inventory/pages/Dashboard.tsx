@@ -29,7 +29,7 @@ export function InvDashboard() {
       <>
         <span className="text-xs text-slate-500">{d.date}</span>
         <span className="flex-1" />
-        {me.manage && <Button icon="sync" onClick={runChecks}>Run automatic checks now</Button>}
+        {me.head && <Button icon="sync" onClick={runChecks}>Run automatic checks now</Button>}
         <Button icon="refresh" onClick={() => app.run(load)}>Refresh</Button>
       </>
     } bodyClass="space-y-4">
@@ -67,7 +67,7 @@ export function InvDashboard() {
             <li>Requisition approval: <b>{d.automation.approval === 'hod' ? 'HOD / store approves' : 'none (approved at once)'}</b></li>
             <li>Auto issue when in stock: <b>{d.automation.autoIssue ? 'on' : 'off'}</b></li>
             <li className="text-slate-500">Daily checks last ran: {d.automation.lastRun || 'not yet'}</li>
-            {me.manage && <li><Button className="mt-1" icon="settings" onClick={() => navigate('/inventory/masters?tab=settings')}>Change</Button></li>}
+            {me.head && <li><Button className="mt-1" icon="settings" onClick={() => navigate('/inventory/masters?tab=settings')}>Change</Button></li>}
           </ul>
         </Card>
       </div>

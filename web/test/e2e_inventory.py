@@ -5,7 +5,7 @@
     python web/test/e2e_inventory.py
 
 Masters, opening stock, issue → automatic re-order draft PO, PO → goods receipt (weighted average cost), requisition →
-HOD approval → issue, roles (StoreKeeper only inventory, HR no inventory), employee portal request with auto approve /
+HOD approval → issue, roles (InventoryHead / StoreKeeper only inventory, StoreKeeper under the head, HR no inventory), employee portal request with auto approve /
 auto issue, returnable items → overdue reminder / exit clearance, transfer, stock count, adjustment, reports, deleting an
 employee in attendance keeps the inventory history, backup includes the inventory tables; material for work sites (issued for
 a site, installed there by the store or from the portal, left-overs returned, site stock / register, inactive / deleted site);
@@ -158,6 +158,17 @@ def main():
         check(len(call('GET', '/inventory/lookups', token=sk)['employees']) == 3, 'StoreKeeper still picks employees in the inventory')
         check(call('GET', '/inventory/items', token=hr).get('status') == 403, 'HR: no inventory')
         check(isinstance(call('GET', '/employees', token=hr), list), 'HR: attendance as before')
+        ih = user('invhead', 'InventoryHead')
+        p = call('GET', '/auth/me', token=ih)['permissions']
+        check(p['read'] == ['inventory'] and p['write'] == ['inventory'], 'InventoryHead reads / writes only the inventory')
+        check(call('GET', '/employees', token=ih).get('status') == 403, 'InventoryHead: no attendance screens')
+        m = call('GET', '/inventory/me', token=sk)
+        check(m['manage'] and not m['head'] and not m['approve'], 'StoreKeeper: daily work, no approvals')
+        m = call('GET', '/inventory/me', token=ih)
+        check(m['manage'] and m['head'] and m['approve'], 'InventoryHead: everything in the inventory')
+        check(call('PUT', '/inventory/settings', {'BinLimit': 3}, token=sk).get('status') == 403, 'StoreKeeper cannot change settings')
+        check(call('DELETE', f'/inventory/warehouses/{store}', token=sk).get('status') == 403, 'StoreKeeper cannot delete')
+        check(call('POST', '/inventory/stock/adjust', {'WarehouseId': store, 'Lines': []}, token=sk).get('status') == 403, 'StoreKeeper cannot adjust stock')
         check(call('POST', '/inventory/items', {'Name': 'x'}, token=hod).get('status') == 403, 'HOD cannot change items')
 
         # ---- requisition → HOD approval → issue
@@ -333,7 +344,8 @@ def main():
         check(any(b['EmployeeId'] == e3 and b['Full'] for b in call('GET', '/inventory/bins?open=1')), 'bins list shows 703 full')
         check(call('GET', '/inventory/bins?q=BIN-703')[0]['EmployeeId'] == e3, 'bins search by bin code')
         check(call('POST', '/inventory/issues', {'EmployeeId': e2, 'WarehouseId': store, 'Lines': [{'ItemId': bb, 'Qty': 1, 'Units': [u1]}]}).get('status') == 400, 'a unit out with 703 cannot be issued again')
-        ok(call('PUT', f'/inventory/bins/{e3}', {'MaxItems': 5, 'Note': 'Senior technician'}, token=sk), 'own limit 5 for 703')
+        check(call('PUT', f'/inventory/bins/{e3}', {'MaxItems': 5}, token=sk).get('status') == 403, 'StoreKeeper cannot change a bin limit')
+        ok(call('PUT', f'/inventory/bins/{e3}', {'MaxItems': 5, 'Note': 'Senior technician'}, token=ih), 'own limit 5 for 703 (Inventory Head)')
         dr = ok(call('POST', '/inventory/issues', {'EmployeeId': e3, 'WarehouseId': store, 'Lines': [{'ItemId': drill, 'Qty': 1}]}), 'drill to 703 now fits')['id']
 
         # giving back by scanning
@@ -410,7 +422,8 @@ def main():
         recv = next(l['Id'] for l in lk['locations'] if l['WarehouseId'] == store and l['IsSystem'])
         books_match('existing stock moved to RECEIVING')
         check(all(x['Code'] == 'RECEIVING' for x in call('GET', f'/inventory/locations/where?item={gloves}') if x['WarehouseId'] == store), 'old gloves stock is on RECEIVING')
-        ok(call('POST', '/inventory/locations/rack', {'WarehouseId': store, 'Rack': 'r1', 'Rows': 2, 'Cols': 3}, token=sk), 'rack R1: 2 rows x 3 columns')
+        check(call('POST', '/inventory/locations/rack', {'WarehouseId': store, 'Rack': 'r1', 'Rows': 2, 'Cols': 3}, token=sk).get('status') == 403, 'StoreKeeper cannot add racks')
+        ok(call('POST', '/inventory/locations/rack', {'WarehouseId': store, 'Rack': 'r1', 'Rows': 2, 'Cols': 3}, token=ih), 'rack R1: 2 rows x 3 columns (Inventory Head)')
         check('0 new' in call('POST', '/inventory/locations/rack', {'WarehouseId': store, 'Rack': 'R1', 'Rows': 2, 'Cols': 3})['message'], 'making it again adds nothing')
         locs = {l['Code']: l['Id'] for l in call('GET', f'/inventory/locations?warehouse={store}')}
         check({'R1-1-1', 'R1-2-3', 'RECEIVING'} <= set(locs), 'locations R1-1-1 … R1-2-3')

@@ -27,6 +27,21 @@ function trusted(req: Request) {
   return !!want && got.length === want.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
 }
 
+/** Roles that run the whole inventory; a StoreKeeper works under them (daily work only). */
+export const HEADS = ['SuperAdmin', 'Admin', 'InventoryHead'];
+
+/** Approvals, settings, bin limits, adjustments / counts and deletes: not for a StoreKeeper. */
+export function headOnly(req: Request, res: Response, next: NextFunction) {
+  if (HEADS.includes(req.role ?? '')) return next();
+  res.status(403).json({ error: 'Only the Inventory Head (or an administrator) can do this.' });
+}
+
+/** Requisition approvals: the heads, and an HOD for their departments (the service checks the department). */
+export function approver(req: Request, res: Response, next: NextFunction) {
+  if (HEADS.includes(req.role ?? '') || req.role === 'HOD') return next();
+  res.status(403).json({ error: 'Only the Inventory Head, an administrator or the HOD can approve requisitions.' });
+}
+
 export function fromGateway(kind: 'admin' | 'employee') {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!trusted(req)) return void res.status(401).json({ error: 'Open the inventory through the attendance app.' });

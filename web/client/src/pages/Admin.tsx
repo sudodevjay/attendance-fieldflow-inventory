@@ -20,7 +20,8 @@ const ROLE_TEXT: Record<string, string> = {
   HR: 'Employees, holidays, shifts / roster, attendance, leave, portal requests, reports, announcements. Reads the rest; no users, no inventory.',
   Payroll: 'Salary structure, statutory rules, salary rule and reports. Reads the rest; no users.',
   Viewer: 'Opens every screen and report but cannot change anything; no users or audit log.',
-  StoreKeeper: 'Inventory only: items, stock, purchase orders, goods receipt, requisitions, issues / returns and inventory reports. No attendance screens.',
+  InventoryHead: 'The whole inventory: approves requisitions and purchase orders, settings, bin limits, stock adjustments / counts, deletes. Store keepers work under them. No attendance screens.',
+  StoreKeeper: 'Inventory daily work under the Inventory Head: receive goods, issue / return, scan, put away, items and inventory reports. No approvals, settings, bin limits, adjustments or deletes. No attendance screens.',
 };
 
 export function Users() {

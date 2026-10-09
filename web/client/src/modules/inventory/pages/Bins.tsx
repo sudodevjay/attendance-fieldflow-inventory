@@ -150,7 +150,7 @@ export function BinView({ employeeId, allowEdit = true }: { employeeId: number; 
 }
 
 function useManage() {
-  try { return useInv().me.manage; } catch { return false; }
+  try { return useInv().me.head; } catch { return false; }
 }
 
 function Tile({ label, value, sub, tone = 'blue' }: { label: string; value: React.ReactNode; sub?: string; tone?: 'blue' | 'red' }) {

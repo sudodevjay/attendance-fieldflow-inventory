@@ -12,7 +12,7 @@ export function StockOps() {
   const { me } = useInv();
   const [tab, setTab] = useState<Tab>(me.manage ? 'transfer' : 'history');
   const tabs: { key: Tab; label: string }[] = me.manage
-    ? [{ key: 'transfer', label: 'Transfer' }, { key: 'adjust', label: 'Adjustment' }, { key: 'count', label: 'Physical stock count' }, { key: 'history', label: 'History' }]
+    ? [{ key: 'transfer', label: 'Transfer' }, ...(me.head ? [{ key: 'adjust' as Tab, label: 'Adjustment' }, { key: 'count' as Tab, label: 'Physical stock count' }] : []), { key: 'history', label: 'History' }]
     : [{ key: 'history', label: 'History' }];
   return (
     <Page title="Transfer / Adjust / Stock Count" icon="sync" bodyClass="flex flex-col gap-3">

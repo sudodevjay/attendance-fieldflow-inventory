@@ -72,7 +72,7 @@ export function Items() {
             { key: 'Actions', header: '', sortable: false, render: (r) => (
               <span className="flex gap-1">
                 <Button onClick={() => setView(r.Id)}>Card</Button>
-                {me.manage && <><Button icon="edit" onClick={() => setEdit({ ...r })}>Edit</Button><Button variant="danger" icon="trash" onClick={() => remove(r)} aria-label="Delete" /></>}
+                {me.manage && <><Button icon="edit" onClick={() => setEdit({ ...r })}>Edit</Button>{me.head && <Button variant="danger" icon="trash" onClick={() => remove(r)} aria-label="Delete" />}</>}
               </span>) },
           ]} />
       </div>

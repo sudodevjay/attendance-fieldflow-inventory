@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { one, query, transaction } from '../db';
 import { INVENTORY_TABLES } from './schema';
 import * as exporter from '../export';
+import { HEADS } from '../gateway';
 import { UserError } from '../utils/errors';
 import { bodyIds, idParam, numQuery, sendFile } from '../utils/http';
 import { fmt, now, today } from '../utils/time';
@@ -23,8 +24,9 @@ const ok = (res: Response) => res.json({ ok: true });
 /** What the logged-in user may do in the inventory (the screens hide the rest). */
 export const me = (req: Request, res: Response) => {
   const role = req.role ?? 'Viewer';
-  const manage = ['SuperAdmin', 'Admin', 'StoreKeeper'].includes(role);
-  res.json({ role, manage, approve: manage || role === 'HOD', scoped: role === 'HOD' });
+  const head = HEADS.includes(role);
+  const manage = head || role === 'StoreKeeper';
+  res.json({ role, manage, head, approve: head || role === 'HOD', scoped: role === 'HOD' });
 };
 
 export const lookups = async (_req: Request, res: Response) => res.json(await masters.lookups());

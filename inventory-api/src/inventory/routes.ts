@@ -4,7 +4,7 @@
  */
 import { Router } from 'express';
 import multer from 'multer';
-import { fromGateway } from '../gateway';
+import { approver, fromGateway, headOnly } from '../gateway';
 import * as c from './controller';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -12,6 +12,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 export const inventoryRoutes = Router();
 const r = inventoryRoutes;
 r.use(fromGateway('admin'));
+/** StoreKeeper: daily work only; these need the Inventory Head (gateway.headOnly). Deletes too (below). */
+r.delete(/.*/, headOnly);
 r.get('/me', c.me);
 r.get('/backup', c.backup);
 r.get('/lookups', c.lookups);
@@ -19,8 +21,8 @@ r.get('/dashboard', c.dashboard);
 r.get('/alerts', c.alerts);
 r.post('/alerts/read', c.markAlerts);
 r.get('/settings', c.settings);
-r.put('/settings', c.saveSettings);
-r.post('/automation/run', c.runChecks);
+r.put('/settings', headOnly, c.saveSettings);
+r.post('/automation/run', headOnly, c.runChecks);
 
 r.get('/categories', c.categories);
 r.post('/categories', c.saveCategory);
@@ -46,13 +48,13 @@ r.delete('/items/:id', c.removeItem);
 r.get('/stock/ledger', c.ledger);
 r.get('/stock/documents', c.stockDocs);
 r.post('/stock/transfer', c.transfer);
-r.post('/stock/adjust', c.adjust);
-r.post('/stock/count', c.count);
+r.post('/stock/adjust', headOnly, c.adjust);
+r.post('/stock/count', headOnly, c.count);
 
 r.get('/requisitions', c.requisitions);
 r.post('/requisitions', c.createRequisition);
 r.get('/requisitions/:id', c.requisition);
-r.post('/requisitions/:id/decide', c.decide);
+r.post('/requisitions/:id/decide', approver, c.decide);
 r.post('/requisitions/:id/cancel', c.cancelRequisition);
 r.post('/requisitions/:id/issue', c.issueRequisition);
 
@@ -66,7 +68,7 @@ r.get('/holdings', c.holdings);
 
 r.get('/bins', c.binList);
 r.get('/bins/:id', c.bin);
-r.put('/bins/:id', c.saveBin);
+r.put('/bins/:id', headOnly, c.saveBin);
 r.get('/units', c.unitList);
 r.post('/units/tag-next', c.tagNext);
 r.get('/units/:id', c.unit);
@@ -75,10 +77,10 @@ r.get('/scan', c.scan);
 r.get('/locations', c.locationList);
 r.get('/locations/where', c.whereIs);
 r.get('/locations/put-away', c.toPutAway);
-r.post('/locations/rack', c.createRack);
+r.post('/locations/rack', headOnly, c.createRack);
 r.post('/locations/move', c.moveStock);
 r.get('/locations/:id', c.location);
-r.put('/locations/:id', c.saveLocation);
+r.put('/locations/:id', headOnly, c.saveLocation);
 r.delete('/locations/:id', c.removeLocation);
 r.post('/scan/return', c.scanReturn);
 
@@ -88,7 +90,7 @@ r.post('/purchase-orders/reorder', c.reorderNow);
 r.get('/purchase-orders/:id', c.po);
 r.put('/purchase-orders/:id', c.savePo);
 r.delete('/purchase-orders/:id', c.removePo);
-r.post('/purchase-orders/:id/status', c.poStatus);
+r.post('/purchase-orders/:id/status', headOnly, c.poStatus);
 r.post('/purchase-orders/:id/receive', c.receive);
 r.get('/receipts', c.receipts);
 r.post('/receipts', c.directReceipt);

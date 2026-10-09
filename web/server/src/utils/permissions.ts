@@ -9,12 +9,16 @@
  *   HR          employees, holidays, shifts, attendance, leave, portal requests, reports, announcements; reads the rest
  *   Payroll     salary structure / rules and reports; reads the rest
  *   Viewer      reads everything except users, audit log and system
- *   StoreKeeper the inventory only (items, stock, purchase, requisitions / issues, its reports); no attendance screens
- * Inventory (the module in modules/inventory): SuperAdmin / Admin / StoreKeeper manage it; an HOD reads it for their
- * departments and approves their requisitions; Viewer reads it; HR and Payroll do not see it (attendance only).
+ *   InventoryHead  the whole inventory: approves requisitions and orders, settings, bin limits, stock adjustments /
+ *               counts, deletes; no attendance screens
+ *   StoreKeeper the inventory's daily work under the InventoryHead (receive, issue / return, scan, put away, items,
+ *               reports); no approvals, settings, bin limits, adjustments or deletes (the inventory service checks
+ *               these); no attendance screens
+ * Inventory (the separate inventory service): SuperAdmin / Admin / InventoryHead / StoreKeeper work in it; an HOD reads
+ * it for their departments and approves their requisitions; Viewer reads it; HR and Payroll do not see it.
  * Team leads and managers are employees: they work in the employee portal (/me) and the app, not here.
  */
-export const ROLES = ['SuperAdmin', 'Admin', 'HOD', 'HR', 'Payroll', 'Viewer', 'StoreKeeper'] as const;
+export const ROLES = ['SuperAdmin', 'Admin', 'HOD', 'HR', 'Payroll', 'Viewer', 'InventoryHead', 'StoreKeeper'] as const;
 export type Role = (typeof ROLES)[number];
 
 export type Area =
@@ -56,6 +60,7 @@ const WRITE: Record<Role, Area[]> = {
   HR: ['employees', 'attendance', 'leave', 'portal', 'reports', 'dashboard'],
   Payroll: ['payroll', 'reports', 'dashboard'],
   Viewer: [],
+  InventoryHead: ['inventory'],
   StoreKeeper: ['inventory'],
 };
 const NO_READ: Record<Role, Area[]> = {
@@ -65,6 +70,7 @@ const NO_READ: Record<Role, Area[]> = {
   HR: ['users', 'system', 'inventory'],
   Payroll: ['users', 'system', 'inventory'],
   Viewer: ['users', 'audit', 'system'],
+  InventoryHead: ATTENDANCE,
   StoreKeeper: ATTENDANCE,
 };
 

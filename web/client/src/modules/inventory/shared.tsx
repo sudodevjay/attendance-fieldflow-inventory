@@ -4,7 +4,8 @@ import { api } from '../../api';
 import { useApp } from '../../app';
 import { Button, Icon, Input, Select } from '../../ui';
 
-export interface InvMe { role: string; manage: boolean; approve: boolean; scoped: boolean }
+/** manage: daily work (StoreKeeper and up); head: approvals, settings, limits, adjustments, deletes. */
+export interface InvMe { role: string; manage: boolean; head: boolean; approve: boolean; scoped: boolean }
 export interface LkItem {
   Id: number; Code: string; Name: string; Unit: string; PurchasePrice: number; GstRate: number; IsReturnable: boolean; ReturnDays: number; PreferredSupplierId: number | null;
   IsActive: boolean; TrackBy: 'Qty' | 'Serial'; Barcode: string;

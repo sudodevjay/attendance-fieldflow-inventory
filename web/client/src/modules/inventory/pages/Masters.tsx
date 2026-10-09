@@ -12,7 +12,7 @@ export function Masters() {
   const { me } = useInv();
   const [tab, setTab] = useState<Tab>((new URLSearchParams(location.search).get('tab') as Tab) || 'suppliers');
   const tabs: { key: Tab; label: string }[] = [{ key: 'suppliers', label: 'Suppliers' }, { key: 'stores', label: 'Stores' }, { key: 'categories', label: 'Categories' }];
-  if (me.manage) tabs.push({ key: 'settings', label: 'Automation settings' });
+  if (me.head) tabs.push({ key: 'settings', label: 'Automation settings' });
   return (
     <Page title="Suppliers, Stores, Categories" icon="folder" bodyClass="flex flex-col gap-2">
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
@@ -50,7 +50,7 @@ function Grid({ rows, columns, onEdit, onDelete, empty }: { rows: any[]; columns
       <DataTable rows={rows} rowKey={(r) => r.Id} onDoubleClick={(r) => me.manage && onEdit({ ...r })} empty={empty}
         rowClass={(r) => (r.IsActive === false ? 'text-slate-400' : '')}
         columns={[...columns, ...(me.manage ? [{ key: 'Actions', header: '', sortable: false, render: (r: any) => (
-          <span className="flex gap-1"><Button icon="edit" onClick={() => onEdit({ ...r })}>Edit</Button><Button variant="danger" icon="trash" onClick={() => onDelete(r)} aria-label="Delete" /></span>) }] : [])]} />
+          <span className="flex gap-1"><Button icon="edit" onClick={() => onEdit({ ...r })}>Edit</Button>{me.head && <Button variant="danger" icon="trash" onClick={() => onDelete(r)} aria-label="Delete" />}</span>) }] : [])]} />
     </div>
   );
 }

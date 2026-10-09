@@ -64,7 +64,7 @@ function Racks({ warehouseId }: { warehouseId: number }) {
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <ScanBox className="w-80" onScan={scan} placeholder="Scan a location, unit or item (where is it?)" />
-        {me.manage && <Button variant="primary" icon="add" onClick={() => setAdd(true)}>Add rack</Button>}
+        {me.head && <Button variant="primary" icon="add" onClick={() => setAdd(true)}>Add rack</Button>}
         <Button icon="print" onClick={() => labels(rows.filter((l) => l.IsActive))} disabled={!rows.length}>Print all labels</Button>
         <Button icon="export" onClick={() => app.run(() => api.download('/inventory/reports/locations/file' + qs({ warehouse: warehouseId, format: 'xlsx' })))}>Stock by location (Excel)</Button>
       </div>
@@ -152,12 +152,12 @@ export function LocationDialog({ id, onClose }: { id: number; onClose: () => voi
   return (
     <Modal title={`${l.Warehouse} · ${l.Code}`} onClose={onClose} width="max-w-3xl" footer={<>
       <Button icon="print" onClick={() => app.run(() => printLabels([{ code: l.Label, title: l.Code, sub: l.Warehouse }], l.Code))}>Label</Button>
-      {me.manage && !l.IsSystem && <><Button onClick={() => save({ IsActive: !l.IsActive })}>{l.IsActive ? 'Switch off' : 'Switch on'}</Button><Button variant="danger" onClick={del}>Delete</Button></>}
+      {me.head && !l.IsSystem && <><Button onClick={() => save({ IsActive: !l.IsActive })}>{l.IsActive ? 'Switch off' : 'Switch on'}</Button><Button variant="danger" onClick={del}>Delete</Button></>}
       <span className="flex-1" /><Button onClick={onClose}>Close</Button></>}>
       <div className="space-y-3">
         <div className="flex flex-wrap items-end gap-3 text-[13px]">
           <span>QR label: <b>{l.Label}</b></span>
-          {me.manage && <><Field label="RFID tag on this position"><Input className="w-56" value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Click and scan the RFID tag" /></Field>
+          {me.head && <><Field label="RFID tag on this position"><Input className="w-56" value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Click and scan the RFID tag" /></Field>
             <Button icon="save" onClick={() => save({})}>Save tag</Button></>}
           {!l.IsActive && <b className="text-red-700">Switched off</b>}
         </div>

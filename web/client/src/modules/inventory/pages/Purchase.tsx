@@ -138,12 +138,12 @@ function PoView({ id, onClose, onEdit, onChanged }: { id: number; onClose: () =>
   return (
     <Modal title={`${p.PoNo} — ${p.Supplier}`} onClose={onClose} width="max-w-4xl" footer={
       <>
-        {me.manage && p.Status === 'Draft' && <><Button variant="danger" icon="trash" onClick={del}>Delete</Button><Button icon="edit" onClick={() => onEdit(p)}>Edit</Button></>}
-        {me.manage && ['Draft', 'Ordered'].includes(p.Status) && !p.Receipts.length && <Button variant="danger" onClick={() => status('Cancelled', 'Cancel this order?')}>Cancel order</Button>}
-        {me.manage && p.Status === 'Partial' && <Button onClick={() => status('Closed', 'Close the order? The rest will not be received.')}>Close (rest not coming)</Button>}
+        {me.manage && p.Status === 'Draft' && <>{me.head && <Button variant="danger" icon="trash" onClick={del}>Delete</Button>}<Button icon="edit" onClick={() => onEdit(p)}>Edit</Button></>}
+        {me.head && ['Draft', 'Ordered'].includes(p.Status) && !p.Receipts.length && <Button variant="danger" onClick={() => status('Cancelled', 'Cancel this order?')}>Cancel order</Button>}
+        {me.head && p.Status === 'Partial' && <Button onClick={() => status('Closed', 'Close the order? The rest will not be received.')}>Close (rest not coming)</Button>}
         <span className="flex-1" />
         <Button icon="report" onClick={print}>Print</Button>
-        {me.manage && p.Status === 'Draft' && <Button variant="primary" icon="check" onClick={() => status('Ordered')}>Mark as ordered</Button>}
+        {me.head && p.Status === 'Draft' && <Button variant="primary" icon="check" onClick={() => status('Ordered')}>Mark as ordered</Button>}
         {canReceive && !recv && <Button variant="primary" icon="download" onClick={startReceive}>Receive goods</Button>}
         {recv && <Button variant="success" icon="save" onClick={receive}>Save receipt</Button>}
         <Button onClick={onClose}>Close</Button>
