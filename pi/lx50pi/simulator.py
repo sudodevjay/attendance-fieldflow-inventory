@@ -27,6 +27,9 @@ class FakeDevice:
         self.authed = False
         self.enabled = True
         self.disables = 0      # CMD_DISABLEDEVICE received (each one shows "Working" on the real device)
+        self.connects = 0      # CMD_CONNECT received
+        self.size_requests = 0  # CMD_GET_FREE_SIZES received
+        self.bytes_read = 0     # buffer bytes sent for CMD_READ_BUFFER
         self.buffer = b''
         self.enrolling = None  # (user_id, finger) after CMD_STARTENROLL
         self.freed_slots = 0   # lx50: deleted users still in the user buffer as zero records
@@ -72,6 +75,7 @@ class FakeDevice:
         ok = lambda data=b'': [reply(P.CMD_ACK_OK, sid, rid, data)]
 
         if p.command == P.CMD_CONNECT:
+            self.connects += 1
             self.session_id = sid = 0x1234
             self.authed = not self.password
             return [reply(P.CMD_ACK_OK if self.authed else P.CMD_ACK_UNAUTH, sid, rid)]
@@ -96,6 +100,7 @@ class FakeDevice:
         if p.command == P.CMD_GET_TIME:
             return ok(struct.pack('<I', P.encode_time(datetime.now().replace(microsecond=0))))
         if p.command == P.CMD_GET_FREE_SIZES:
+            self.size_requests += 1
             if self.lx50:
                 i = struct.unpack('<I', p.data[:4])[0] if len(p.data) >= 4 else None
                 return ok(self.sizes()[i * 4:i * 4 + 4] if i is not None and i < 20 else b'\x00' * 4)
@@ -109,6 +114,7 @@ class FakeDevice:
         if p.command == P.CMD_READ_BUFFER:
             start, size = struct.unpack('<ii', p.data[:8])
             chunk = self.buffer[start:start + size]
+            self.bytes_read += len(chunk)
             out = [reply(P.CMD_PREPARE_DATA, sid, rid, struct.pack('<I', len(chunk)))]
             out += [reply(P.CMD_DATA, sid, rid, chunk[i:i + 1024]) for i in range(0, len(chunk), 1024)]
             return out + ok()

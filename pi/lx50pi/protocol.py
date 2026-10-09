@@ -152,6 +152,8 @@ class Sizes:
 
 # Fields of the GET_FREE_SIZES table that parse_sizes uses (the LX50 returns one per request)
 SIZE_FIELDS = (4, 6, 8, 12, 14, 15, 16)
+# Only the user and punch counts (what the service needs every poll: fewer USB packets)
+COUNT_FIELDS = (4, 8)
 
 
 def parse_sizes(data: bytes) -> Sizes:

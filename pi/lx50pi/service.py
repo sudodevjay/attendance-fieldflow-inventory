@@ -5,8 +5,10 @@ import configparser
 import hashlib
 import logging
 import time
+from datetime import datetime
 
 from . import commands as C
+from . import protocol as P
 from .device import Device, DeviceError
 from .store import Store
 from .transport import TransportError, from_config
@@ -18,7 +20,8 @@ DEFAULTS = {
     'device': {'transport': 'usb', 'usb_vid': '1b55', 'usb_pid': '0a01', 'usb_framing': 'zkusb',
                'password': '0', 'timeout': '5', 'chunk_size': '1024'},
     'poll': {'interval_seconds': '15', 'full_read_minutes': '60', 'quiet_seconds': '20', 'max_wait_seconds': '120',
-             'disable_while_reading': 'no'},
+             'disable_while_reading': 'no', 'device_interval_seconds': '60', 'rush_hours': '',
+             'enable_on_exit': 'yes', 'all_punches_hours': '24'},
     'cloud': {'url': '', 'users_url': '', 'commands_url': '', 'token': '', 'device_name': '', 'batch_size': '200',
               'verify_tls': 'yes'},
     'store': {'path': 'lx50.db'},
@@ -35,10 +38,22 @@ def load_config(path=None) -> configparser.ConfigParser:
     return cfg
 
 
+def parse_hours(text: str):
+    """'09:00-10:30, 17:30-19:30' -> [(540, 630), (1050, 1170)] (minutes after midnight)."""
+    spans = []
+    for part in filter(None, (p.strip() for p in text.replace(';', ',').split(','))):
+        try:
+            a, b = (int(h) * 60 + int(m) for h, m in (t.strip().split(':') for t in part.split('-')))
+        except ValueError:
+            raise ValueError(f'rush_hours: bad span {part!r} (use HH:MM-HH:MM)') from None
+        spans.append((a, b))
+    return spans
+
+
 def make_device(cfg) -> Device:
     d = cfg['device']
     return Device(from_config(d), password=int(d['password']), timeout=float(d['timeout']),
-                  chunk_size=int(d['chunk_size']))
+                  chunk_size=int(d['chunk_size']), enable_on_exit=cfg['poll'].getboolean('enable_on_exit'))
 
 
 class Service:
@@ -62,9 +77,19 @@ class Service:
         self.quiet = float(cfg['poll']['quiet_seconds'])
         self.max_wait = float(cfg['poll']['max_wait_seconds'])
         self.disable_reads = cfg['poll'].getboolean('disable_while_reading')
+        # Every poll is a USB session with the LX50 (connect, serial, counts, exit). On 2026-10-08 the LX50 hung
+        # ("Working", no punches) with the Pi polling it every 15 s and worked through the morning rush once the
+        # cable was out. So: the device is polled once a minute, and not touched at all in rush_hours (punches
+        # stay on the device and are read right after; cloud commands wait in the cloud queue).
+        self.device_interval = float(cfg['poll']['device_interval_seconds'])
+        self.rush = parse_hours(cfg['poll']['rush_hours'])
+        self.in_rush = False
+        self.last_poll = None  # time.monotonic() of the last device poll
         self.pending = None  # {'count', 'changed', 'first'}: new punches seen on the device, not read yet
         self.user_count = None  # sizes.users when the users were last read
         self.last_full = 0.0
+        self.all_punches_every = float(cfg['poll']['all_punches_hours']) * 3600
+        self.last_all_punches = -self.all_punches_every
         self.serial = self.store.get('serial', '')
 
     def _settled(self, count, now) -> bool:
@@ -89,7 +114,7 @@ class Service:
                 self.store.put('records', -1)
                 self.store.put('users_sent', '')
                 self.force_full = True
-            sizes = dev.sizes()
+            sizes = dev.sizes(P.COUNT_FIELDS)
             now = time.monotonic()
             last = int(self.store.get('records', -1))
             full = (self.force_full or self.users is None or sizes.users != self.user_count
@@ -104,7 +129,13 @@ class Service:
                 dev.disable()
             try:
                 users = dev.users(sizes) if full else self.users
-                punches = dev.attendance(sizes, users)
+                # all punches only on the first read / another device / once a day; otherwise just the new ones
+                if (self.force_full or last <= 0 or sizes.records < last
+                        or now - self.last_all_punches >= self.all_punches_every):
+                    punches, what = dev.attendance(sizes, users), 'all'
+                    self.last_all_punches = now
+                else:
+                    punches, what = dev.new_attendance(sizes, last, users), 'new'
             finally:
                 if self.disable_reads:
                     dev.enable()
@@ -117,8 +148,8 @@ class Service:
         self.pending = None
         new = self.store.add_punches(self.serial, punches)
         self.store.put('records', sizes.records)
-        log.info('device %s: %d users, %d punches on device, %d new (%s read in %.1f s)', self.serial, len(users),
-                 len(punches), new, 'full' if full else 'punch', took)
+        log.info('device %s: %d users, %d punches on device, %d read, %d new (%s%s punches read in %.1f s)',
+                 self.serial, len(users), sizes.records, len(punches), new, 'users + ' if full else '', what, took)
         return new
 
     def upload(self) -> int:
@@ -186,25 +217,43 @@ class Service:
         self.report_results()
         return len(todo)
 
-    def run_once(self):
-        try:
-            self.run_commands()
-        except C.CommandError as e:
-            log.warning('commands: %s', e)
-        except (TransportError, DeviceError, OSError, ValueError) as e:
-            log.warning('device (commands): %s', e)
-        try:
-            self.poll_device()
-        except (TransportError, DeviceError, OSError, ValueError) as e:
-            log.warning('device: %s', e)
+    def rush_now(self, now: datetime = None) -> bool:
+        now = now or datetime.now()
+        m = now.hour * 60 + now.minute
+        return any(a <= m < b if a <= b else (m >= a or m < b) for a, b in self.rush)
+
+    def run_once(self, now: datetime = None):
+        rush = self.rush_now(now)
+        if rush != self.in_rush:
+            self.in_rush = rush
+            log.info('rush hours: the LX50 is left alone' if rush else 'rush hours over: reading the LX50 again')
+        if not rush:
+            self.device_cycle()
         try:
             self.upload()
             self.upload_users()
         except UploadError as e:
             log.warning('upload: %s (%d waiting)', e, self.store.count_unsent())
 
+    def device_cycle(self):
+        try:
+            self.run_commands()
+        except C.CommandError as e:
+            log.warning('commands: %s', e)
+        except (TransportError, DeviceError, OSError, ValueError) as e:
+            log.warning('device (commands): %s', e)
+        mono = time.monotonic()
+        if not (self.force_full or self.last_poll is None or mono - self.last_poll >= self.device_interval):
+            return
+        self.last_poll = mono
+        try:
+            self.poll_device()
+        except (TransportError, DeviceError, OSError, ValueError) as e:
+            log.warning('device: %s', e)
+
     def run_forever(self):
-        log.info('service started, polling every %ss', self.interval)
+        log.info('service started, polling every %ss (device every %ss, rush hours: %s)', self.interval,
+                 self.device_interval, self.cfg['poll']['rush_hours'] or 'none')
         while True:
             started = time.monotonic()
             self.run_once()

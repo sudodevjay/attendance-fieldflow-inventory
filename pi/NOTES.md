@@ -86,3 +86,25 @@
 - The Pi's Wi-Fi chip hung for ~8 min ("brcmf_proto_bcdc_query_dcmd ... -110"): Wi-Fi power save is now off
   (NetworkManager conf.d/lx50pi-wifi-powersave.conf + iw), the agent reads the Wi-Fi status once a minute, and a
   watchdog restarts the Wi-Fi after 3 min without the server and reloads brcmfmac after 10 min.
+
+## 2026-10-08 — LX50 hung in the morning rush
+- Owner: in the morning nobody could punch, the LX50 showed "Working"; cable out + restart fixed it.
+- Pi journal: 09:13-09:39 the Pi polled the LX50 every 15 s (connect, serial, 7 size requests, exit; USB fine,
+  no errors) and the device stored no punches; Pi power off 09:39:04; the LX50 was off the USB until 13:01 and stored
+  15 punches 09:38-10:09 by itself (the rush). The Pi also logs undervoltage every few minutes (weak adapter).
+- Change: device polled once a minute (`device_interval_seconds = 60`), only users + punch counts per poll
+  (`COUNT_FIELDS`, 3 size requests instead of 8), and no USB contact at all in `rush_hours`
+  (Pi: 09:00-10:30, 17:30-19:00, owner's in/out times); cloud commands wait in the cloud queue then.
+- Owner: "one punch came, then Working". Journal: punch 09:11:18, Pi saw the new count, 09:13 full read with the
+  device enabled (no DISABLE/ENABLE since the 2026-10-08 00:00 change), then no punches until 09:38. The SDK always
+  ends with EnableDevice: every session now sends CMD_ENABLEDEVICE before CMD_EXIT (`enable_on_exit = yes`).
+
+- Only new punches are read: the ATTLOG buffer is u32 size + 22-byte records, new ones at the end, so the read
+  starts at 4 + known * 22 (`Device.new_attendance`). Real LX50: last 5 of 2529 in 0.7 s (all: 13.8 s), same as
+  SQLite. All punches only at start / other device / fewer punches / every `all_punches_hours = 24`. 48 tests pass.
+- After `systemctl restart` in the middle of a read the first connect got "connect refused: CMD_DATA" (old reply
+  left on the USB); the next poll a minute later was fine.
+- Evening 2026-10-08: 13 punches 18:01-18:49 with the Pi leaving the LX50 alone (rush 17:30-19:00), all read and
+  uploaded at 19:00:07, later ones within minutes (0.7 s reads). No hang reported.
+- 2026-10-09 06:13: owner OK'd later uploads: Pi config `device_interval_seconds = 600` (one USB session per 10 min,
+  ~50 a day instead of ~5,700) and `quiet_seconds = 0` (read at once when the count changed).

@@ -29,8 +29,11 @@ def check_user(user_id, name, password='', privilege=P.USER_DEFAULT, card=0):
 
 
 class Device:
-    def __init__(self, transport: Transport, password: int = 0, timeout: float = 5.0, chunk_size: int = 16 * 1024):
+    def __init__(self, transport: Transport, password: int = 0, timeout: float = 5.0, chunk_size: int = 16 * 1024,
+                 enable_on_exit: bool = False):
         self.t = transport
+        # CMD_ENABLEDEVICE before CMD_EXIT, as the ZKTeco SDK leaves a session: brings the LX50 back from "Working"
+        self.enable_on_exit = enable_on_exit
         self.password = password
         self.timeout = timeout
         self.chunk_size = chunk_size  # pyzk: 16 KB for UDP, 0xFFC0 for TCP; USB value from capture
@@ -75,6 +78,8 @@ class Device:
     def disconnect(self):
         try:
             if self.connected:
+                if self.enable_on_exit:
+                    self.command(P.CMD_ENABLEDEVICE)
                 self.command(P.CMD_EXIT)
         except (TransportError, DeviceError, ValueError):
             pass
@@ -104,14 +109,14 @@ class Device:
     def time(self):
         return P.decode_time(struct.unpack('<I', self._ok(P.CMD_GET_TIME).data[:4])[0])
 
-    def sizes(self) -> P.Sizes:
+    def sizes(self, fields=P.SIZE_FIELDS) -> P.Sizes:
         r = self._ok(P.CMD_GET_FREE_SIZES)
         if len(r.data) >= 80:
             return P.parse_sizes(r.data)
         # The LX50 answers 4 bytes: it wants the field index (same numbering as the 80-byte table) per request,
-        # as the SDK does (4 users, 6 fingerprints, 8 punches)
+        # as the SDK does (4 users, 6 fingerprints, 8 punches). fields=P.COUNT_FIELDS: only users + punches.
         f = [0] * 20
-        for i in P.SIZE_FIELDS:
+        for i in fields:
             f[i] = struct.unpack('<i', self._ok(P.CMD_GET_FREE_SIZES, struct.pack('<I', i)).data[:4])[0]
         return P.parse_sizes(struct.pack('<20i', *f))
 
@@ -122,14 +127,15 @@ class Device:
         self._ok(P.CMD_ENABLEDEVICE)
 
     # ---- bulk data -------------------------------------------------------------------------------------------
-    def read_buffer(self, command: int, fct: int = 0, ext: int = 0) -> bytes:
-        """Two-step bulk read used for users / logs: prepare a buffer, then read it in chunks, then free it."""
+    def read_buffer(self, command: int, fct: int = 0, ext: int = 0, skip=None) -> bytes:
+        """Two-step bulk read used for users / logs: prepare a buffer, then read it in chunks, then free it.
+        skip(size) -> offset: start reading there (the bytes before it are not sent over the USB)."""
         r = self._ok(P.CMD_PREPARE_BUFFER, struct.pack('<bhii', 1, command, fct, ext))
         if r.command == P.CMD_DATA:  # small result comes back directly
-            return r.data
+            return r.data[skip(len(r.data)):] if skip else r.data
         size = struct.unpack('<I', r.data[1:5])[0]
         out = bytearray()
-        start = 0
+        start = skip(size) if skip else 0
         while start < size:
             n = min(self.chunk_size, size - start)
             out += self._read_chunk(start, n)
@@ -167,6 +173,26 @@ class Device:
             return []
         by_uid = {u.uid: u.user_id for u in (users or [])}
         return P.parse_attendance(self.read_buffer(P.CMD_ATTLOG_RRQ), sizes.records, by_uid)
+
+    def new_attendance(self, sizes: P.Sizes, known: int, users=None):
+        """Only the punches after the first `known` ones. The buffer is u32 size + records of one size, new punches
+        are appended at the end: the read starts at 4 + known * record size, so ~2,500 old punches (~14 s over USB)
+        are not read again for 1-2 new ones."""
+        new = sizes.records - known
+        if known <= 0 or new < 0:
+            return self.attendance(sizes, users)
+        if new == 0:
+            return []
+
+        def skip(size):
+            rec, rest = divmod(size - 4, sizes.records)
+            if rest or rec not in (8, 16, 22, 40):
+                raise DeviceError(f'punch buffer of {size} bytes does not fit {sizes.records} records')
+            return 4 + known * rec
+
+        tail = self.read_buffer(P.CMD_ATTLOG_RRQ, skip=skip)
+        by_uid = {u.uid: u.user_id for u in (users or [])}
+        return P.parse_attendance(struct.pack('<I', len(tail)) + tail, new, by_uid)
 
     # ---- writes ----------------------------------------------------------------------------------------------
     def set_user(self, user_id: str, name: str, password: str = '', privilege: int = P.USER_DEFAULT,

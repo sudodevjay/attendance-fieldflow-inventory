@@ -252,7 +252,8 @@ class ServiceTests(unittest.TestCase):
         cfg = load_config()
         cfg.read_dict({'device': {'transport': 'udp', 'host': '127.0.0.1', 'port': str(port)},
                        'cloud': {'url': f'http://127.0.0.1:{cloud.server_port}/punches', 'token': 'abc'},
-                       'store': {'path': os.path.join(tmp, 'lx50.db')}, 'poll': {'quiet_seconds': '0'}})
+                       'store': {'path': os.path.join(tmp, 'lx50.db')},
+                       'poll': {'quiet_seconds': '0', 'device_interval_seconds': '0'}})
         svc = Service(cfg)
         self.addCleanup(svc.store.close)
 
@@ -284,7 +285,8 @@ class ServiceTests(unittest.TestCase):
         cfg = load_config()
         cfg.read_dict({'device': {'transport': 'udp', 'host': '127.0.0.1', 'port': str(port)},
                        'cloud': {'url': f'http://127.0.0.1:{cloud.server_port}/punches', 'token': 'abc'},
-                       'store': {'path': os.path.join(tmp, 'lx50.db')}, 'poll': {'quiet_seconds': '0'}})
+                       'store': {'path': os.path.join(tmp, 'lx50.db')},
+                       'poll': {'quiet_seconds': '0', 'device_interval_seconds': '0'}})
         svc = Service(cfg)
         self.addCleanup(svc.store.close)
         svc.run_once()
@@ -333,7 +335,7 @@ class QuietReadTests(unittest.TestCase):
         svc.pending['changed'] -= 20
         with self.assertLogs('lx50pi.service', 'INFO') as logs:
             self.assertEqual(svc.poll_device(), 2)      # quiet for 20 s: both read, users not read again
-        self.assertIn('punch read', logs.output[-1])
+        self.assertIn('(new punches read', logs.output[-1])
         self.assertIsNone(svc.pending)
 
     def test_rush_is_read_after_max_wait(self):
@@ -359,8 +361,105 @@ class QuietReadTests(unittest.TestCase):
         fake.users.append(P.User(2, '2', 'Asha', P.USER_DEFAULT, '', 0))
         with self.assertLogs('lx50pi.service', 'INFO') as logs:
             svc.poll_device()
-        self.assertIn('full read', logs.output[-1])
+        self.assertIn('users + ', logs.output[-1])
         self.assertEqual([u.user_id for u in svc.users], ['1', '2'])
+
+
+
+class RushHourTests(unittest.TestCase):
+    """2026-10-08: the LX50 hung ("Working") while the Pi polled it every 15 s; without the Pi it worked through the
+    rush. The device is polled less often and not touched at all in rush_hours."""
+
+    def make(self, **poll):
+        fake = simulator.FakeDevice(lx50=True)
+        fake.add_punch('1', datetime(2026, 10, 8, 9, 0, 0))
+        srv, port = simulator.serve(fake, 'udp')
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        tmp = tempfile.mkdtemp()
+        cfg = load_config()
+        cfg.read_dict({'device': {'transport': 'udp', 'host': '127.0.0.1', 'port': str(port)},
+                       'store': {'path': os.path.join(tmp, 'lx50.db')}, 'poll': poll})
+        svc = Service(cfg)
+        self.addCleanup(svc.store.close)
+        return fake, svc
+
+    def test_parse_hours(self):
+        from lx50pi.service import parse_hours
+        self.assertEqual(parse_hours('09:00-10:30, 17:30-19:30'), [(540, 630), (1050, 1170)])
+        self.assertEqual(parse_hours(''), [])
+        with self.assertRaises(ValueError):
+            parse_hours('9-10')
+
+    def test_device_left_alone_in_rush_hours(self):
+        fake, svc = self.make(rush_hours='09:00-10:30', quiet_seconds='0', device_interval_seconds='0')
+        with self.assertLogs('lx50pi.service', 'INFO') as logs:
+            for minute in (0, 5, 29):
+                svc.run_once(datetime(2026, 10, 8, 9, minute))
+        self.assertEqual(fake.connects, 0)
+        self.assertIn('left alone', logs.output[0])
+        fake.add_punch('2', datetime(2026, 10, 8, 9, 40, 0))
+        with self.assertLogs('lx50pi.service', 'INFO') as logs:
+            svc.run_once(datetime(2026, 10, 8, 10, 30))     # rush over: everything read at once
+        self.assertIn('rush hours over', logs.output[0])
+        self.assertEqual(fake.connects, 1)
+        self.assertEqual(svc.store.count_unsent(), 2)
+
+    def test_rush_over_midnight(self):
+        fake, svc = self.make(rush_hours='23:00-01:00')
+        self.assertTrue(svc.rush_now(datetime(2026, 10, 8, 0, 30)))
+        self.assertFalse(svc.rush_now(datetime(2026, 10, 8, 1, 0)))
+
+    def test_device_polled_once_a_minute(self):
+        fake, svc = self.make(device_interval_seconds='60')
+        svc.run_once()
+        svc.run_once()
+        self.assertEqual(fake.connects, 1)
+        svc.last_poll -= 60
+        svc.run_once()
+        self.assertEqual(fake.connects, 2)
+
+    def test_every_session_ends_with_enable(self):
+        fake, svc = self.make(device_interval_seconds='0')
+        fake.enabled = False                                # stuck on "Working"
+        svc.run_once()
+        self.assertTrue(fake.enabled)
+        self.assertEqual(fake.disables, 0)
+
+    def test_only_new_punches_are_read(self):
+        fake, svc = self.make(device_interval_seconds='0', quiet_seconds='0')
+        for i in range(100):
+            fake.add_punch('1', datetime(2026, 10, 1, 9, 0, 0) + timedelta(minutes=i))
+        svc.run_once()                                      # first cycle: all 101 punches
+        self.assertEqual(int(svc.store.get('records')), 101)
+        fake.add_punch('2', datetime(2026, 10, 8, 9, 30, 0), punch=1)
+        fake.add_punch('3', datetime(2026, 10, 8, 9, 31, 0))
+        before = fake.bytes_read
+        with self.assertLogs('lx50pi.service', 'INFO') as logs:
+            svc.run_once()
+        self.assertEqual(fake.bytes_read - before, 2 * 22)  # two 22-byte LX50 records, not 103
+        self.assertIn('2 read, 2 new (new punches', logs.output[-1])
+        rows = svc.store.unsent(500)
+        self.assertEqual([(r['user_id'], r['ts']) for r in rows[-2:]],
+                         [('2', '2026-10-08T09:30:00'), ('3', '2026-10-08T09:31:00')])
+
+    def test_fewer_punches_on_device_reads_all(self):
+        fake, svc = self.make(device_interval_seconds='0', quiet_seconds='0')
+        fake.add_punch('2', datetime(2026, 10, 8, 9, 30, 0))
+        svc.run_once()
+        fake.punches = []                                   # log cleared on the device, then one punch
+        fake.add_punch('5', datetime(2026, 10, 8, 11, 0, 0))
+        with self.assertLogs('lx50pi.service', 'INFO') as logs:
+            svc.run_once()
+        self.assertIn('(all punches', logs.output[-1])
+        self.assertEqual(int(svc.store.get('records')), 1)
+
+    def test_poll_reads_only_the_counts(self):
+        fake, svc = self.make(device_interval_seconds='0')
+        svc.run_once()                                      # first cycle: full read
+        before = fake.size_requests
+        svc.run_once()                                      # then: 1 + users + punches, not all 7 fields
+        self.assertEqual(fake.size_requests - before, 1 + len(P.COUNT_FIELDS))
 
 
 def _cloud_server(test):

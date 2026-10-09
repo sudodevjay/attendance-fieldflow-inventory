@@ -27,9 +27,10 @@ Google Drive / pendrive par bhi rakhein.
 | **Render** (hosting, free) | https://dashboard.render.com → service **zk-attendance** (`srv-dau99mek1f9s73at5u9g`), region Singapore, root `web/`, build `npm run install:all && npm run build`, start `npm start`, health check `/api/auth/status` |
 | Render env vars | `DATABASE_URL` (Supabase URI), `ADMIN_PASSWORD` (pehla admin password, sirf jab koi password set na ho), `TZ=Asia/Kolkata`, `NODE_VERSION=22` |
 | **Supabase** (database, free) | https://supabase.com/dashboard/project/jvwliosayqsnfbgvefnu — PostgreSQL 17, region Southeast Asia (Singapore) |
+| **Inventory service** | Alag backend `inventory-api/` + **apna alag Supabase project** (attendance DB se alag). App/browser sirf attendance server se baat karta hai; wo login check karke `/api/inventory` ko inventory service par bhejta hai. Dono sirf API se baat karte hain (shared `SERVICE_TOKEN`). Setup: [web/DEPLOY.md](web/DEPLOY.md) → *2b* |
 | Database connection | **Session pooler**: host `aws-0-ap-southeast-1.pooler.supabase.com`, port `5432`, database `postgres`, user `postgres.jvwliosayqsnfbgvefnu` → `postgresql://postgres.jvwliosayqsnfbgvefnu:<PASSWORD>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres` ("Direct connection" Render par nahi chalta: IPv6) |
 | **Raspberry Pi** | Raspberry Pi 4, Debian 13, user `housys`, hostname `housys` (`housys.local` same Wi-Fi par) |
-| Pi remote access | **Tailscale**: naam `housys-pi`, IP `100.107.8.31` → `ssh housys@housys-pi` (laptop / phone par Tailscale on, same account) |
+| Pi remote access | **Tailscale**: naam `housys-pi`, IP `100.107.8.31` → `c` (laptop / phone par Tailscale on, same account) |
 | Pi Wi-Fi agent | `lx50pi-wifi` (systemd, root, boot par chalu): har 5 s `/api/lx50/wifi` se /wifisetup ke commands leta hai. Log: `journalctl -u lx50pi-wifi -f`. Config `[wifi]` (`fallback_ssid = satyendra`) |
 | Pi service | `lx50pi` (systemd, boot par chalu). Config `/etc/lx50pi/config.ini` (purani copy `config.ini.bak-*`), local punches `/var/lib/lx50pi/lx50.db` |
 | Pi → cloud | `[cloud]` me `url / users_url / commands_url = https://zk-attendance.onrender.com/api/lx50/{punches,users,commands}`, `token = <Pi token>`, `verify_tls = yes` |
@@ -274,7 +275,8 @@ me database me save hoti hai; purane version ki binary photo pehli baar khulne p
 - Attendance Rule: punch window (default shift se 4 ghante pehle), repeat punch ignore (default 1 minute), sirf ek punch = Present / Half Day / Absent.
 - Shift window: shift start se 4 ghante pehle se agle 24 ghante tak ke punches us din ke maane jaate hain (night shift support).
 - **Pehla punch = IN, aakhri punch = OUT** (LX50 par staff aksar In/Out key nahi dabate, isliye state par depend nahi karte).
-- Late = IN > shift start + late grace (poore late minutes dikhaye jaate hain).
+- Late = IN > shift start + late grace (poore late minu
+tes dikhaye jaate hain).
 - Early = OUT < shift end − early grace.
 - Half day = worked minutes < "Half day if worked <".
 - OT = worked − shift duration, agar ≥ "OT counted after". Holiday / weekly off par poora kaam OT.
@@ -307,3 +309,9 @@ src/ZkAttendance/
 ```
 
 Libraries: EF Core SqlServer 8, ClosedXML (Excel), QuestPDF (PDF — Community license, free for businesses under USD 1M annual revenue).
+
+
+
+easyway - EZWAYS
+
+Genetec - 
